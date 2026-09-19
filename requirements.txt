@@ -8,10 +8,12 @@ scipy
 pandas
 matplotlib
 seaborn
+cartopy
 scikit-learn
 tqdm
 IPython
 pytest
+tabulate      # pandas .to_markdown() in whn_figures.py
 
 # netCDF / data handling (HYPSTAR products are netCDF)
 xarray

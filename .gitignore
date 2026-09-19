@@ -6,6 +6,9 @@ __pycache__/
 # C extensions
 *.so
 
+# Context files -- generated PDFs of the WATERHYPERNET documents
+context/WHN/*.pdf
+
 # Distribution / packaging
 .Python
 build/

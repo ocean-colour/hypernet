@@ -13,7 +13,18 @@ diagnostic plots are intended to be shared with the community.
 Repository layout:
 
 - `hypernet/` — the Python package source.
-  - `hypernet/tests/` — pytest tests (`pytest.ini` points `testpaths` here).
+  - `hypernet/tests/` — pytest tests.
+- `context/WHN/` — the WATERHYPERNET Release-2 exploration, moved over wholesale
+  from the `IOPtics` repo (see `claude_prompts/explore_prompts.md`, Prompts/Move).
+  `whn_explore.py` (indexing/sampling), `whn_figures.py` (summary table +
+  `figs/`), `whn_simspec_check.py` (similarity-spectrum over-subtraction scan)
+  and `test_whn_explore.py` — standalone scripts that import each other flat, so
+  they must stay in one directory; run them from inside it.  `WATERHYPERNET.md`
+  and `respond_to_kevin.md` are outward-facing documents; `make_pdf.py` renders
+  them and **shells out to a hard-coded macOS Google Chrome path**.  Generated
+  PDFs are gitignored; parquet/npz intermediates stay outside the repo under
+  `$OS_COLOR`.
+- `pytest.ini` — `testpaths = hypernet/tests context/WHN`.
 - `claude_prompts/` — prompts and task definitions that drive this work.
   `start_up_prompts.md` is the bootstrapping doc; read the relevant prompt doc
   before acting, and do the numbered task you were pointed at, not the whole file.

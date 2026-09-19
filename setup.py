@@ -21,8 +21,8 @@ if os.path.exists('README.md'):
 setup_keywords['provides'] = [setup_keywords['name']]
 setup_keywords['python_requires'] = '>=3.12'
 setup_keywords['install_requires'] = [
-    'numpy', 'scipy', 'pandas', 'matplotlib', 'seaborn',
-    'scikit-learn', 'tqdm', 'IPython', 'pytest',
+    'numpy', 'scipy', 'pandas', 'matplotlib', 'seaborn', 'cartopy',
+    'scikit-learn', 'tqdm', 'IPython', 'pytest', 'tabulate',
     # netCDF / data handling (HYPSTAR products are netCDF)
     'xarray', 'netcdf4', 'h5netcdf', 'h5py', 'cftime', 'pyarrow',
     # Data retrieval from the HYPERNETS data portal

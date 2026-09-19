@@ -745,3 +745,72 @@ Opus 5, no subagents. Code only; `docs/WATERHYPERNET.md` untouched. `pytest -q`
   one-line change to route it through the shared helper if he wants the codebase
   consistent.
 
+### 2026-09-19 — HOWTO prompt 6 (document restructured in place)
+
+Opus 5, no subagents. `docs/WATERHYPERNET.md` rewritten as a **single file**,
+509 → 654 lines. `pytest -q` → 21 passed (untouched by this prompt).
+
+- **Ten sections in the agreed order**, manual `## N.` numbering dropped, all
+  cross-references now heading anchors. D1-D4 fixed. Every figure and both CSVs
+  link correctly.
+- **Two gaps in the settled plan that I had to close myself**, both because the
+  page list and the H3 answer were decided in different rounds and never
+  reconciled:
+  - **The nine-page list has no slot for the IOP section**, because when I wrote
+    it in round 1 I had recommended moving §14 to IOPtics; H3 then said keep it.
+    Placed it as its own section, *Using these data for IOP retrieval*, between
+    the over-subtraction issue and the licence — generalised to IOP retrieval
+    with IOPtics named once as "one such effort", linking both the GitHub and RTD
+    pages.
+  - **Old §2 (Scope: reflectance only) is not in the page list either.** Folded
+    it into *About the archive* as a subsection, which also gives that page the
+    shape "what it is · how to get it · what it does and does not contain".
+- **Wrote and ran the Quickstart code before publishing it.** Two snippets — via
+  `load_spectrum` and via bare `netCDF4` — executed against a real VEIT_H file;
+  they agree, and the quoted output (1,538 bands, 350.1–1099.9 nm,
+  Rrs(560) = 0.00938 sr⁻¹) is their actual output. The bare-netCDF4 version is
+  followed by a note that it hard-codes `reflectance`, wrong at three sites, and
+  that π divides the std too — turning the snippet into the hand-off to the next
+  section.
+- **Kept the hazards checklist as a named list** rather than dissolving it
+  entirely. The round-1 plan was to distribute it, and the warnings now do appear
+  where the reader meets them; but Kevin singled that list out as "particularly
+  useful", so removing it as an artifact would lose something he valued. It
+  survives at the end of *Traps* as ten cross-links into the sections that
+  explain each.
+- **Verified rather than asserted that the numbers survived.** Two passes: a
+  token-level diff of every numeric string old vs new, then a targeted check of
+  138 named measured values — site counts, coordinates, rates, σ/Rrs, the 30-file
+  table, sampling parameters, reference page numbers. **All present**; the only
+  two flags were my own test strings spanning a line break. The numeric-token
+  diff's other "losses" are exactly the deleted section numbers (`1.` … `15.`,
+  `9.1`, `9.2`) and the retired "18 tests".
+- **I reproduced defect D2 while fixing it, and the check caught it.** An anchor
+  checker I wrote flagged one broken internal link: I had written
+  `#the-products-are-w-not-rrs` for a heading reading "The products are **ρw**,
+  not Rrs", dropping the Greek letter. Retargeted to the stable ASCII parent
+  anchor rather than depending on Unicode slugs rendering identically in GitHub
+  and MyST. All 16 internal links and all 8 file links now resolve.
+
+**Claims the restructure strands or changes — for your review:**
+
+- **D3 resolved by removing the number, not correcting it.** The appendix
+  run-block now reads `pytest -q  # data-dependent tests self-skip`. The count
+  was 18, became 19 at the Move and 21 after yesterday's regression test; any
+  literal number there is guaranteed to go stale again.
+- **The title changed one word**, "summary" → "guide" ("an independent data
+  user's guide"). The genre changed and H2(a) was about the framing block, not
+  the title. Revert if you disagree — it is your byline.
+- **"345 pairs" now appears once, not twice.** It is intact in *Time and
+  identity*; the checklist recap cross-links instead of repeating it.
+- **One factual claim is now load-bearing in a new way.** The Quickstart tells
+  readers `quality_flag` 0 means passed and shows `load_spectrum` returning it.
+  That is only true because of yesterday's fix — on any earlier checkout the
+  guide's own example misreports PANTHYR. Worth remembering if the document is
+  ever read against an older tag.
+- **The SWIR paragraph is the one thing a reader cannot check.** Written as
+  agreed, with the pers.-comm. attribution and the caveat that SWIR bands are not
+  distributed in these files; I anchored it to the release notes' published
+  Future Evolution bullet as well, so the claim rests on something citable in
+  addition to the meeting.
+

@@ -1,4 +1,4 @@
-"""Tests for the WATERHYPERNET exploration layer (:mod:`whn_explore`).
+"""Tests for the WATERHYPERNET exploration layer (:mod:`hypernet.whn_explore`).
 
 Two tiers, following the project's testing convention (see
 ``ioptics/tests/conftest.py``):
@@ -11,19 +11,16 @@ Two tiers, following the project's testing convention (see
 
 Run from the repository root::
 
-    pytest -q context/WHN/test_whn_explore.py
+    pytest -q hypernet/tests/test_whn_explore.py
 """
 
 import os
-import sys
 
 import numpy as np
 import pandas as pd
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-import whn_explore as wx        # noqa: E402
+from hypernet import whn_explore as wx
 
 
 def _whn_available():
@@ -200,7 +197,7 @@ def test_build_index_small():
 
 # --- Similarity-Spectrum over-subtraction check ------------------------------
 
-import whn_simspec_check as sc        # noqa: E402
+from hypernet import whn_simspec_check as sc        # noqa: E402
 
 
 def test_flag_oversubtraction_logic():

@@ -25,11 +25,33 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
+PDF rendering of the documents under `docs/` additionally needs Google Chrome at
+the standard macOS location; everything else is pip-installable.
+
+## The WATERHYPERNET Release-2 exploration
+
+An indexing and sampling pass over the 56,669-file Release-2 archive, with the
+findings written up in [`docs/WATERHYPERNET.md`](docs/WATERHYPERNET.md) (a draft
+user HOWTO). Run from the repository root, with the archive reachable at
+`$OS_COLOR/WATERHYPERNET/RELEASE_2`:
+
+```bash
+python -m hypernet.whn_explore 1       # index all files from their names
+python -m hypernet.whn_explore 2       # read a pool, cluster, sample ~100/site
+python docs/whn_figures.py             # summary table + figures into docs/
+python -m hypernet.whn_simspec_check   # over-subtraction scan at the dark sites
+```
+
+Parquet/npz intermediates land outside the repository, under
+`$OS_COLOR/hypernet/whn_explore`.
+
 ## Tests
 
 ```bash
 pytest
 ```
+
+Tests that need the archive skip automatically when it is not mounted.
 
 ## Related
 

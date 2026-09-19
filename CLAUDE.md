@@ -12,19 +12,22 @@ diagnostic plots are intended to be shared with the community.
 
 Repository layout:
 
-- `hypernet/` — the Python package source.
-  - `hypernet/tests/` — pytest tests.
-- `context/WHN/` — the WATERHYPERNET Release-2 exploration, moved over wholesale
-  from the `IOPtics` repo (see `claude_prompts/explore_prompts.md`, Prompts/Move).
-  `whn_explore.py` (indexing/sampling), `whn_figures.py` (summary table +
-  `figs/`), `whn_simspec_check.py` (similarity-spectrum over-subtraction scan)
-  and `test_whn_explore.py` — standalone scripts that import each other flat, so
-  they must stay in one directory; run them from inside it.  `WATERHYPERNET.md`
-  and `respond_to_kevin.md` are outward-facing documents; `make_pdf.py` renders
-  them and **shells out to a hard-coded macOS Google Chrome path**.  Generated
-  PDFs are gitignored; parquet/npz intermediates stay outside the repo under
-  `$OS_COLOR`.
-- `pytest.ini` — `testpaths = hypernet/tests context/WHN`.
+- `hypernet/` — the Python package source: the reusable WATERHYPERNET data
+  layer.
+  - `whn_explore.py` — archive root resolution, filename indexing, single-
+    spectrum reads with the agreed product/units conventions (Rrs = ρw/π),
+    pooling, shape clustering and the ~100-spectrum-per-site sample.
+    `python -m hypernet.whn_explore 1|2`.
+  - `whn_simspec_check.py` — the Similarity-Spectrum over-subtraction scan at
+    the dark sites.  `python -m hypernet.whn_simspec_check`.
+  - `hypernet/tests/` — pytest tests (`pytest.ini` points `testpaths` here).
+- `docs/` — the user-facing HOWTO and the code that exists only to produce it.
+  `WATERHYPERNET.md` is the draft User HOWTO, to be exposed via readthedocs;
+  `kevin_comments.md` and `respond_to_kevin.md` are the review correspondence.
+  `whn_figures.py` writes `figs/*.png` + `summary_table.{csv,md}`, and
+  `make_pdf.py` renders a Markdown document to PDF — it **shells out to a
+  hard-coded macOS Google Chrome path**, so PDF generation is macOS-only.
+  Generated PDFs are gitignored.
 - `claude_prompts/` — prompts and task definitions that drive this work.
   `start_up_prompts.md` is the bootstrapping doc; read the relevant prompt doc
   before acting, and do the numbered task you were pointed at, not the whole file.
@@ -49,6 +52,12 @@ package directory named after the repo.
   perform one-off calculations only in memory or in the chat.
 - **Python environment:** If you need to run Python, use the `ocean14` conda
   environment (e.g. `conda run -n ocean14 python script.py`).
+- **Running the scripts:** from the repository root, so that `hypernet` imports
+  resolve (`python docs/whn_figures.py`, `python -m hypernet.whn_explore 1`).
+  `pip install -e .` removes the need for the `sys.path` bootstrap at the top of
+  `docs/whn_figures.py`.
+- **Data artifacts:** parquet/npz intermediates are written outside the repo,
+  under `$OS_COLOR/hypernet/whn_explore`; only figures and tables are committed.
 - **Logging:** Record completed work under the `## Logs` section of the prompt
   doc you were working from, dated, including what you learned about the repo.
 

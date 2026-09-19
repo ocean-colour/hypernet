@@ -405,7 +405,7 @@ A checklist for anyone writing code against this archive:
 
 This section is specific to the use case that motivated the exploration:
 evaluating inherent-optical-property (IOP) retrieval algorithms, the purpose of
-the [IOPtics](https://github.com/ocean-colour/IOPtics) package.
+the companion [IOPtics](https://github.com/ocean-colour/IOPtics) package.
 
 A reflectance-only archive can exercise such algorithms but cannot, on its own,
 validate what they retrieve. An algorithm can be run on these spectra and the Rrs
@@ -474,15 +474,16 @@ Key references from the release notes:
 
 ## How this was produced
 
-All code is in the public [IOPtics repository](https://github.com/ocean-colour/IOPtics)
-under `context/WHN/`, and runs end to end against a local copy of the archive:
+All code is in the public [hypernet repository](https://github.com/ocean-colour/hypernet)
+and runs end to end against a local copy of the archive, from the repository
+root:
 
 ```bash
-python whn_explore.py 1        # index all 56,669 files from their names
-python whn_explore.py 2        # read 400/site, cluster, sample 100/site
-python whn_figures.py          # summary table + figures
-python whn_simspec_check.py    # full over-subtraction scan at the dark sites
-pytest -q test_whn_explore.py  # 18 tests; data-dependent ones self-skip
+python -m hypernet.whn_explore 1       # index all 56,669 files from their names
+python -m hypernet.whn_explore 2       # read 400/site, cluster, sample 100/site
+python docs/whn_figures.py             # summary table + figures
+python -m hypernet.whn_simspec_check   # over-subtraction scan at the dark sites
+pytest -q                              # 18 tests; data-dependent ones self-skip
 ```
 
 **Conventions.** `reflectance` everywhere except LPAR_H, MAFR_H and O1BE_P, which

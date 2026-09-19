@@ -1,7 +1,7 @@
 """Figures and summary table for the WATERHYPERNET Release 2 exploration.
 
-Consumes the tables written by :mod:`whn_explore` (stages 1-2) and produces, in
-``context/WHN``:
+Consumes the tables written by :mod:`hypernet.whn_explore` (stages 1-2) and
+produces, in ``docs/``:
 
 - ``summary_table.csv`` + ``summary_table.md`` -- one row per site.
 - ``figs/fig_sites_map.png``      -- where the 11 sites are.
@@ -13,16 +13,18 @@ Consumes the tables written by :mod:`whn_explore` (stages 1-2) and produces, in
                                      and each site's composition.
 - ``figs/fig_band_timeseries.png``-- Rrs(490/560/665) against time, per site.
 
-All spectra plotted here are on the display grid :data:`whn_explore.ANALYSIS_WAVE`
-and expressed as **Rrs = rho_w/pi** [1/sr]; see :mod:`whn_explore` for the
-product and units conventions. Run after stages 1-2::
+All spectra plotted here are on the display grid
+:data:`hypernet.whn_explore.ANALYSIS_WAVE` and expressed as **Rrs = rho_w/pi**
+[1/sr]; see :mod:`hypernet.whn_explore` for the product and units conventions.
+Run after stages 1-2, from the repository root::
 
-    python whn_figures.py
+    python docs/whn_figures.py
 """
 
 from __future__ import annotations
 
 import os
+import sys
 
 import numpy as np
 import pandas as pd
@@ -32,8 +34,21 @@ matplotlib.use('Agg')                            # headless
 import matplotlib.pyplot as plt                  # noqa: E402
 from matplotlib import gridspec                  # noqa: E402
 
-from whn_explore import (ANALYSIS_WAVE, CLUSTER_RANGE, N_CLUSTERS, NOSC_SITES,
-                         TS_BANDS, fig_dir, out_root, product_for)  # noqa: E402
+# This script lives outside the package, so make the repository root importable
+# when hypernet has not been pip-installed (``pip install -e .`` makes this a
+# no-op).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from hypernet.whn_explore import (ANALYSIS_WAVE, CLUSTER_RANGE,   # noqa: E402
+                                  N_CLUSTERS, NOSC_SITES, TS_BANDS,
+                                  out_root, product_for)
+
+
+def fig_dir():
+    """Directory for the committed figures (``docs/figs``)."""
+    d = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'figs')
+    os.makedirs(d, exist_ok=True)
+    return d
 
 #: Consistent colour per measuring system across every figure.
 SYS_COLOR = {'HYPSTAR': '#1f78b4', 'PANTHYR': '#e66101'}
@@ -462,7 +477,7 @@ def fig_band_timeseries(pool, grids):
 
 
 def _save(fig, name):
-    """Write ``fig`` into ``context/WHN/figs`` and report the path."""
+    """Write ``fig`` into ``docs/figs`` and report the path."""
     path = os.path.join(fig_dir(), name)
     fig.savefig(path, dpi=140, bbox_inches='tight')
     plt.close(fig)

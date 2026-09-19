@@ -155,14 +155,14 @@ WATERHYPERNET documentation. That carries no maintenance commitment on either
 side and gives you something stable to cite immediately. A PDF of the current
 version accompanies this note.
 
-**A link to the repository second, once it is on `main`.** The code and document
-live in the public repository
-[github.com/ocean-colour/IOPtics](https://github.com/ocean-colour/IOPtics) under
-`context/WHN/`, but they are currently on a working branch. They will be merged
-to `main` shortly, and I will send you the stable path when they are — at which
-point an "exploitation tools" link would be very welcome. Everything is
-re-runnable: indexing, sampling, the figures and the over-subtraction scan, with
-a test suite that skips cleanly when the archive is not mounted.
+**A link to the repository second.** The code and document now live in their own
+public repository,
+[github.com/ocean-colour/hypernet](https://github.com/ocean-colour/hypernet) —
+the document under `docs/`, the analysis code in the `hypernet` package. I will
+send you the stable path once it settles, at which point an "exploitation tools"
+link would be very welcome. Everything is re-runnable: indexing, sampling, the
+figures and the over-subtraction scan, with a test suite that skips cleanly when
+the archive is not mounted.
 
 **On right of reply.** The document now contains two things that read as
 criticism of your processing — the over-subtraction finding in §9.2 and the

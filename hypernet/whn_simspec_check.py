@@ -32,7 +32,7 @@ import os
 import numpy as np
 import pandas as pd
 
-from whn_explore import out_root, whn_root  # noqa: F401  (whn_root: path check)
+from hypernet.whn_explore import out_root, whn_root  # noqa: F401  (whn_root: path check)
 
 #: The three darkest sites by median Rrs(560) -- where cluster 5 came from.
 DARK_SITES = ('THFR_H', 'BEFR_H', 'WRUK_H')

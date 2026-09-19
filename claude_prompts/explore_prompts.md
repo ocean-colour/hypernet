@@ -78,6 +78,8 @@ Use Fable if you can.  Log your work.
 
 1. After running through all of the prompts in Explore from within the `IOPtics` repo, I have decided to generate a stand-alone Repo for this effort.  This file is a copy of the `waterhypernet_prompts.md` file.  Please copy over all the files from the `IOPtics` repo related to WATERHYPERNET to this new repo.  I will then remove the branch on the `IOPtics` repo.  Use Fable if you can.  Log your work.  If you have any questions, ask me in Q&A/Move section below.
 
+2. Ok, thanks for that effort.  I have answered your questions below.  After reading them, generate a new prompt doc named `howto_prompts.md` in `claude_prompts` and I will carry on with the HOWTO there.  Use Opus 5.  Log your work.
+
 ## Q&A
 
 ### Move
@@ -108,6 +110,8 @@ with the tests under `hypernet/tests/`, documents and figures staying in
 for this prompt and (b) as its own follow-up, since (b) means rewriting the
 cross-imports and the `fig_dir()`/`__file__` anchoring. Which do you want?
 
+>A. We should treat the document we have created as a draft User HOWTO doc.  I have just created a `docs/` sub-folder.  Move doc-related code into that sub-folder.  Items that might be useful generically show go into `hypernet\`.  I am going to pick up the HOWTO effort in a separate prompt doc and expose via `readthedocs`.
+
 **M2 -- Where should the intermediates live?** `out_root()` still writes to
 `$OS_COLOR/IOPtics/whn_explore`, which currently holds 18 MB of cache
 (`index.parquet`, `pool.parquet`, `pool_spectra.npz`, `sample.parquet`,
@@ -115,6 +119,8 @@ cross-imports and the `fig_dir()`/`__file__` anchoring. Which do you want?
 `$OS_COLOR/hypernet/whn_explore` and `mv` the existing directory across, so
 nothing has to be regenerated. Say the word and I'll do both (it is a one-line
 change in `whn_explore.py` plus the move), or tell me to leave the path alone.
+
+>A. Yes, rename as you suggest
 
 **M3 -- Two outward-facing sentences now point at the wrong repo.** These are the
 only stale references in prose, and both are in documents meant for Kevin:
@@ -131,10 +137,14 @@ silent edit here. I left both untouched pending your answer. (The §14 "Implicat
 for IOP retrieval work" reference to IOPtics at line 408 is still correct -- that
 one is about the IOP package as a real sibling project, so I would keep it.)
 
+>A. I don't think I've sent Kevin that response, but do update it to point at the right place(s).
+
 **M4 -- The PDFs.** `WATERHYPERNET.pdf` and `respond_to_kevin.pdf` came across but
 are gitignored, so they will not be committed. They also go stale the moment M3 is
 actioned. Regenerate them with `make_pdf.py` after the wording is settled, or do
 you want the PDFs committed in this repo so there is a citable frozen artifact?
+
+>A. Ok, we will regnerate.  We won't add the PDF to this Repo.
 
 **M5 -- Four small edits I made outside `context/WHN/`; tell me if any is
 unwanted.** (i) `.gitignore` -- added `context/WHN/*.pdf`, carried over from
@@ -148,6 +158,8 @@ the layout section described a repo without `context/WHN/` and stated
 `testpaths` pointed only at `hypernet/tests`; I documented the new directory,
 the flat-import constraint, and the Chrome dependency below.
 
+>A. These mods are fine
+
 **M6 -- Internal references inside the scripts, less urgent than M3.** These
 mislead a reader but break nothing, and most are docstrings:
 `whn_explore.py:8` cites `claude_prompts/waterhypernet_prompts.md` (here it is
@@ -157,6 +169,8 @@ IOPtics conventions with no counterpart in this repo;
 `test_whn_explore.py:3-4` points at `ioptics/tests/conftest.py` as the testing
 convention. Want these swept in one pass, together with whatever M1/M2/M3
 decide? I'd rather do it once than touch the files repeatedly.
+
+>A. I'll save the sweep for the HOWTO effort.
 
 **Not a question, just a prerequisite worth recording:** `make_pdf.py:26`
 hard-codes `/Applications/Google Chrome.app/.../Google Chrome` and shells out to
@@ -736,3 +750,66 @@ IOPtics section; PDF produced.
   gitignored regardless.
 - Re-ran `pytest -q` after the dependency and config edits: **19 passed**.
 - No git state changed in either repo (JXP runs git).
+
+### 2026-09-19 — Move prompt 2 (answers actioned; repo restructured; HOWTO doc seeded)
+
+Built to the Q&A/Move answers. Opus 5 throughout, as asked; no subagents.
+
+- **M1 restructure.** Split `context/WHN/` along the line JXP drew — doc-related
+  code into `docs/`, generically useful code into `hypernet/` — and removed
+  `context/` entirely. To `hypernet/`: `whn_explore.py` (the data layer) and
+  `whn_simspec_check.py` (an archive-wide QC diagnostic, reusable independently
+  of the write-up), with `test_whn_explore.py` to `hypernet/tests/`. To `docs/`:
+  `WATERHYPERNET.md`, `respond_to_kevin.md`, `kevin_comments.md`,
+  `whn_figures.py`, `make_pdf.py`, `figs/`, `summary_table.{csv,md}`,
+  `simspec_flagged.csv`. Plain `mv`, not `git mv` (JXP runs git).
+- **The split forced four functional edits**, none of them optional:
+  - `fig_dir()` lived in `whn_explore.py` but anchors on `__file__`, so after the
+    move it would have written figures into `hypernet/figs`. Only `whn_figures.py`
+    ever used it, so it moved there and now resolves `docs/figs`.
+  - `whn_figures.py` and `whn_simspec_check.py` imported `whn_explore` flat; both
+    now import `hypernet.whn_explore`.
+  - `test_whn_explore.py` dropped its `sys.path.insert` hack for
+    `from hypernet import whn_explore as wx` / `whn_simspec_check as sc`.
+  - `whn_figures.py` sits outside the package, so it needs the repo root on
+    `sys.path`; added a three-line bootstrap that `pip install -e .` makes a
+    no-op. `pytest.ini` went back to `testpaths = hypernet/tests`.
+- **M2 done.** `out_root()` now resolves `$OS_COLOR/hypernet/whn_explore`, and
+  the existing 18 MB cache was moved there rather than regenerated — all five
+  artifacts (`index.parquet`, `pool.parquet`, `pool_spectra.npz`,
+  `sample.parquet`, `simspec_check.parquet`) verified in place afterwards.
+  `$OS_COLOR/IOPtics/` keeps its own `leaderboard.parquet` and `runs/`.
+- **M3 done**, since the response had not gone out. `WATERHYPERNET.md` "How this
+  was produced" now names the hypernet repo and the new run commands; the §14
+  IOPtics link stays but reads "the companion IOPtics package". In
+  `respond_to_kevin.md` the whole "once it is on `main`" promise was rewritten —
+  the old text pledged a merge to IOPtics `main` that is now never going to
+  happen, so it would have been wrong even with the URL swapped.
+- **Verified the restructure rather than assuming it.** `pytest -q` → **19
+  passed**. Both `python -m hypernet.whn_explore --help` and
+  `python -m hypernet.whn_simspec_check --help` resolve. `python
+  docs/whn_figures.py` regenerated all six figures into `docs/figs/` and rewrote
+  the summary table — the per-site numbers came back identical to the committed
+  ones, so the move changed nothing about the science.
+- **M4 done.** Both PDFs regenerated from the corrected Markdown
+  (`WATERHYPERNET.pdf` 1.78 MB, `respond_to_kevin.pdf` 0.15 MB) and left
+  gitignored, per "we won't add the PDF to this Repo". `.gitignore` entry
+  retargeted `context/WHN/*.pdf` → `docs/*.pdf`.
+- **M6 deliberately not done** — JXP is saving the docstring sweep for the HOWTO
+  effort, so the three stale references (`whn_explore.py:8,28`,
+  `test_whn_explore.py:3-4`) are carried into `howto_prompts.md` as a listed
+  task. I did update the docstring lines that the code changes made factually
+  wrong (the `out_root` path, the figure output directory, the `-m` invocations),
+  which is M2/M1 fallout rather than the deferred sweep.
+- **`CLAUDE.md` and `README.md` rewritten** for the new layout: the package/docs
+  split, run-from-the-root and `pip install -e .`, the `$OS_COLOR/hypernet`
+  artifact location, and Chrome as a macOS-only prerequisite for PDFs.
+- **Wrote `claude_prompts/howto_prompts.md`** — Goal, Conventions (corrected for
+  this repo; the ones inherited here still describe IOPtics' Linux paths and
+  Bokeh/Sphinx needs), Context, a proposed four-prompt sequence, Q&A and Logs.
+  The Context section is the part worth reading: current layout, what the
+  document actually is, the live threads (Kevin unsent, §14 written for the wrong
+  audience, nothing readthedocs exists yet), and the numbers to keep straight.
+  Flagged the genre problem explicitly — the document is a findings survey and a
+  HOWTO is task-ordered, which is the first thing to settle.
+- No git commands run; `$OS_COLOR/WATERHYPERNET` untouched.

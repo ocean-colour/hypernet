@@ -30,9 +30,9 @@ Stages (mirroring the ``build_v1.py`` driver pattern)::
     python whn_explore.py 1     # index the archive from filenames -> index.parquet
     python whn_explore.py 2     # read a pool, cluster, sample ~100/site -> sample.*
 
-Intermediates (parquet/npz) are written under ``$OS_COLOR/IOPtics/whn_explore``
-rather than into the repo, following the project's artifact split; only the
-figures and the summary table land in ``context/WHN``.
+Intermediates (parquet/npz) are written under ``$OS_COLOR/hypernet/whn_explore``
+rather than into the repo; only the figures and the summary table land in the
+repo, under ``docs/``.
 """
 
 from __future__ import annotations
@@ -104,20 +104,12 @@ def whn_root(path=None):
 def out_root():
     """Directory for generated intermediates (index/sample tables, spectra).
 
-    Kept outside the repo -- ``$OS_COLOR/IOPtics/whn_explore`` -- so parquet and
+    Kept outside the repo -- ``$OS_COLOR/hypernet/whn_explore`` -- so parquet and
     npz artifacts are not committed, matching the project's artifact split.
     """
-    root = os.path.join(os.getenv('OS_COLOR', '.'), 'IOPtics', 'whn_explore')
+    root = os.path.join(os.getenv('OS_COLOR', '.'), 'hypernet', 'whn_explore')
     os.makedirs(root, exist_ok=True)
     return root
-
-
-def fig_dir():
-    """Directory for the committed figures (``context/WHN/figs``)."""
-    here = os.path.dirname(os.path.abspath(__file__))
-    d = os.path.join(here, 'figs')
-    os.makedirs(d, exist_ok=True)
-    return d
 
 
 def system_of(site):

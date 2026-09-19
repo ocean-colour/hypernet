@@ -1,0 +1,25 @@
+# Runtime dependencies for hypernet.
+#
+# Keep this list in sync with install_requires in setup.py.
+
+# Core scientific stack
+numpy
+scipy
+pandas
+matplotlib
+seaborn
+scikit-learn
+tqdm
+IPython
+pytest
+
+# netCDF / data handling (HYPSTAR products are netCDF)
+xarray
+netcdf4
+h5netcdf
+h5py
+cftime
+pyarrow
+
+# Data retrieval from the HYPERNETS data portal
+requests

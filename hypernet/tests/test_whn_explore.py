@@ -1,7 +1,6 @@
 """Tests for the WATERHYPERNET exploration layer (:mod:`hypernet.whn_explore`).
 
-Two tiers, following the project's testing convention (see
-``ioptics/tests/conftest.py``):
+Two tiers:
 
 - **Tier 1** -- data-independent tests of the pure logic (product selection,
   apportionment, shape normalisation) run everywhere.
@@ -182,6 +181,35 @@ def test_load_spectrum_analysis_grid():
 
     bare = wx.load_spectrum(path, 'VEIT_H', analysis_grid=False)
     assert bare['Rrs_grid'] is None
+
+
+@needs_whn
+@pytest.mark.parametrize('site', ['O1BE_P', 'THFR_H'])
+def test_quality_flag_survives_the_panthyr_fill_value(site):
+    """A passing ``quality_flag`` of 0 must not be read as missing.
+
+    Regression test. PANTHYR declares ``_FillValue = 0`` on a bitmask whose zero
+    value means *no flags set* -- a pass -- so a masked read turns every passing
+    PANTHYR measurement into NaN, and anyone filtering ``quality_flag == 0``
+    drops the whole PANTHYR half of the archive. HYPSTAR declares no
+    ``_FillValue`` here and is checked alongside to show the fix changes nothing
+    for it.
+    """
+    import glob
+    import netCDF4
+
+    root = wx.whn_root()
+    path = sorted(glob.glob(os.path.join(root, site, '*', '*', '*', '*.nc')))[0]
+
+    flag = wx.load_spectrum(path, site, analysis_grid=False)['quality_flag']
+
+    ds = netCDF4.Dataset(path)
+    ds.set_auto_mask(False)
+    raw = float(np.asarray(ds.variables['quality_flag'][:]).ravel()[0])
+    ds.close()
+
+    assert np.isfinite(flag), f'{site}: quality_flag read as NaN, not {raw}'
+    assert flag == raw
 
 
 @needs_whn

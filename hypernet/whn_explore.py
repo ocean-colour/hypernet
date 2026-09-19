@@ -3,15 +3,17 @@
 This module is the data half of the WATERHYPERNET exploration: it indexes the
 archive, reads single spectra with the agreed product/units conventions, and
 draws an optically-diverse ~100-spectrum sample per site. Figures and the
-summary table live in the companion :mod:`whn_figures`.
+summary table are produced by the companion script ``docs/whn_figures.py``.
 
-Conventions agreed in ``claude_prompts/waterhypernet_prompts.md`` (Q&A rounds
-1-2), all implemented here:
+Conventions agreed in ``claude_prompts/explore_prompts.md`` (Q&A rounds 1-2),
+all implemented here:
 
-- **Product.** ``reflectance`` (NIR/SWIR Similarity-Spectrum corrected) at every
-  site *except* the three the release notes call out as poor -- ``LPAR_H``,
+- **Product.** ``reflectance`` (NIR Similarity-Spectrum corrected) at every site
+  *except* the three the release notes call out as poor -- ``LPAR_H``,
   ``MAFR_H``, ``O1BE_P`` -- which use ``reflectance_nosc`` (see
-  :data:`NOSC_SITES`).
+  :data:`NOSC_SITES`). The correction is **NIR**-based for *both* systems; what
+  is SWIR-based for HYPSTAR in Release 2 is the separate QC test, which is a
+  different thing and easy to conflate.
 - **Units.** Both products are water-leaving reflectance ``rho_w`` (verified
   numerically: ``reflectance_nosc == pi * Lw / Ed`` to machine precision), so
   everything here returns **Rrs = rho_w / pi** [1/sr] and **sigma = std / pi**.
@@ -25,10 +27,10 @@ Conventions agreed in ``claude_prompts/waterhypernet_prompts.md`` (Q&A rounds
 - **Negative reflectance is kept.** The release retains it deliberately, and so
   do we.
 
-Stages (mirroring the ``build_v1.py`` driver pattern)::
+Stages, run from the repository root::
 
-    python whn_explore.py 1     # index the archive from filenames -> index.parquet
-    python whn_explore.py 2     # read a pool, cluster, sample ~100/site -> sample.*
+    python -m hypernet.whn_explore 1   # index the archive from filenames -> index.parquet
+    python -m hypernet.whn_explore 2   # read a pool, cluster, sample ~100/site -> sample.*
 
 Intermediates (parquet/npz) are written under ``$OS_COLOR/hypernet/whn_explore``
 rather than into the repo; only the figures and the summary table land in the
@@ -235,7 +237,7 @@ def load_spectrum(path, site, analysis_grid=True):
             'vza': _scalar(ds, 'viewing_zenith_angle'),
             'saa': _scalar(ds, 'solar_azimuth_angle'),
             'vaa': _scalar(ds, 'viewing_azimuth_angle'),
-            'quality_flag': _scalar(ds, 'quality_flag'),
+            'quality_flag': _quality_flag(ds),
             'serial': _serial(ds),
             'lat': _site_lat(ds),
             'lon': _site_lon(ds),
@@ -277,6 +279,33 @@ def _scalar(ds, name):
     if name not in ds.variables:
         return np.nan
     arr = _filled(ds.variables[name])
+    return float(arr[0]) if arr.size else np.nan
+
+
+def _quality_flag(ds):
+    """``quality_flag`` read with masking disabled, so that 0 means *passed*.
+
+    PANTHYR declares ``_FillValue = 0`` on this variable, but the variable is a
+    bitmask (``flag_masks = 1, 2, 4 ...``) whose zero value means *no flags set*,
+    i.e. the measurement **passed**. Under ordinary masked reads every passing
+    PANTHYR measurement therefore comes back as missing, and filtering on
+    ``quality_flag == 0`` silently discards all 12,080 PANTHYR spectra. Reading
+    raw recovers the real value.
+
+    The trade-off is deliberate: because the release declares the meaningful
+    value as the fill value, a genuinely absent flag cannot be distinguished
+    from a pass in these files, and a pass is what 0 means. HYPSTAR declares no
+    ``_FillValue`` here at all, so raw and masked reads agree for it.
+
+    Only ``quality_flag`` is read this way. PANTHYR's angles carry the same
+    ``_FillValue = 0`` but are *genuinely* fill -- ``solar_azimuth_angle`` is
+    empty in every file sampled -- so they keep the mask and stay NaN.
+    """
+    if 'quality_flag' not in ds.variables:
+        return np.nan
+    var = ds.variables['quality_flag']
+    var.set_auto_mask(False)
+    arr = np.asarray(var[:], dtype=float).ravel()
     return float(arr[0]) if arr.size else np.nan
 
 

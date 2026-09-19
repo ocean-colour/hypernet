@@ -1,5 +1,13 @@
 """Render a Markdown document in this directory to a paginated PDF.
 
+.. deprecated::
+   **Superseded by the readthedocs build.** Read the Docs is now the primary
+   documentation source for this project, and it produces its own PDF, so this
+   script is no longer part of the documentation pipeline. It is kept only
+   because it still works and because the two PDFs already on disk were built
+   with it. Do not add new documents to it; if the RTD build covers your case,
+   use that instead. Note also that it is macOS-only -- see ``CHROME`` below.
+
 Written because none of the usual converters (pandoc, weasyprint, wkhtmltopdf,
 python-markdown) are installed in ``ocean14``; the only PDF engine available is
 the headless Chrome already on the machine. The Markdown subset handled here is

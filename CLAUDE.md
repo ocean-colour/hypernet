@@ -21,13 +21,23 @@ Repository layout:
   - `whn_simspec_check.py` — the Similarity-Spectrum over-subtraction scan at
     the dark sites.  `python -m hypernet.whn_simspec_check`.
   - `hypernet/tests/` — pytest tests (`pytest.ini` points `testpaths` here).
-- `docs/` — the user-facing HOWTO and the code that exists only to produce it.
-  `WATERHYPERNET.md` is the draft User HOWTO, to be exposed via readthedocs;
-  `kevin_comments.md` and `respond_to_kevin.md` are the review correspondence.
-  `whn_figures.py` writes `figs/*.png` + `summary_table.{csv,md}`, and
-  `make_pdf.py` renders a Markdown document to PDF — it **shells out to a
-  hard-coded macOS Google Chrome path**, so PDF generation is macOS-only.
-  Generated PDFs are gitignored.
+- `docs/` — **the Sphinx source root** for the WATERHYPERNET user guide, built
+  by Read the Docs (`.readthedocs.yaml` at the repo root, `docs/conf.py`,
+  `docs/requirements.txt`).  The guide is Markdown parsed by MyST: `index.md`
+  carries the byline and the toctree, and the eleven page files follow the
+  reading order set in `claude_prompts/howto_prompts.md`.
+  - ⚠ **Every `.md` file in `docs/` becomes a published page.**  One left out of
+    the toctree is still built and still served at a guessable URL, so anything
+    not meant for the public site must go in `exclude_patterns` in `conf.py` or
+    live outside `docs/`.  This is why the review correspondence sits in
+    `correspondence/`.
+  - `whn_figures.py` writes `figs/*.png` + `summary_table.{csv,md}`
+    (`summary_table.md` is excluded from the build).  `make_pdf.py` is
+    **deprecated** — superseded by the RTD build, macOS/Chrome-only, and its
+    default target no longer exists.  Generated PDFs are gitignored.
+- `correspondence/` — `kevin_comments.md` and `respond_to_kevin.md`, the review
+  exchange with Kevin Ruddick.  Deliberately outside the documentation build;
+  the response has not been sent.
 - `claude_prompts/` — prompts and task definitions that drive this work.
   `start_up_prompts.md` is the bootstrapping doc; read the relevant prompt doc
   before acting, and do the numbered task you were pointed at, not the whole file.

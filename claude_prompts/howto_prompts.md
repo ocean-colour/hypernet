@@ -194,7 +194,11 @@ prompt 5, D1-D4 in prompt 6.
    reStructuredText. Confirm the figures and both CSVs are carried into the
    build. Use Opus 5. Log your work.
 
-8. **Kevin — deferred; do not act until I say so.** Check
+8. **Answered Round 4.** I have answered the Round 4 Q&A related Prompt 7.
+   Read my response and act accordingly.
+   Use Opus 5. Log your work.
+
+9. **Kevin — deferred; do not act until I say so.** Check
    `docs/respond_to_kevin.md` against the restructured document: the
    over-subtraction numbers, the section references, and the line promising "A
    PDF of the current version accompanies this note", which the RTD decision
@@ -524,6 +528,72 @@ which is arguably where page boundaries belong. Options:
 - **Access becomes a section of page 1 ("About the archive")**, not its own page,
   in keeping with "a few basics".
 
+### HOWTO — round 4 (prompt 7 check-in: source format and docs root)
+
+Prompt 7 says to decide the source format with you first, so nothing is split or
+written yet. Two questions, both informed by what I found rather than by taste.
+
+**The toolchain is already in `ocean14`**: sphinx 9.1.0, myst-parser 5.1.0,
+sphinx-rtd-theme 3.1.0, furo 2025.12.19, pydata-sphinx-theme 0.21.0. No
+sphinx-book-theme, and — the relevant absence — **no pandoc**.
+
+**`IOPtics` sets a house pattern** worth matching where it costs nothing: furo
+theme, Sphinx rooted at `docs/source/`, build deps in `docs/requirements.txt`,
+`.readthedocs.yaml` at the repo root (ubuntu-24.04, Python 3.12, `pip install .`
+so autodoc can import the package), and `sphinx.ext.napoleon` for numpydoc
+docstrings. Its sources are pure `.rst` with no MyST.
+
+**R4-Q1 — Markdown (MyST) or reStructuredText?** The house pattern says RST; the
+content says Markdown. Concretely, a move to RST means hand-rewriting **7 tables
+(51 rows), 6 fenced code blocks, 6 images, 21 links, 1 block quote and 75 bold
+runs** across 654 lines, with no pandoc to do it — which is a lot of
+transcription risk immediately after two prompts spent removing exactly that
+class of error. Against that, the only real argument for RST is consistency with
+IOPtics.
+
+That argument mostly dissolves on inspection: **Sphinx reads both in one
+project.** Adding `myst_parser` to `extensions` lets `.md` and `.rst` coexist, so
+choosing MyST for the prose does not stop the future package-API section being
+`.rst` + autodoc + napoleon exactly as IOPtics does it. It also keeps the guide
+readable on GitHub. **I recommend MyST for the prose and matching IOPtics on
+everything else** — furo, `docs/source/`, `docs/requirements.txt`, the same
+`.readthedocs.yaml` shape.
+
+>A. Agreed.  Let's keep markdown for the HOWTO.  It will also render better on GitHub.   And, yes, follow your recommendations too.
+
+**R4-Q2 — Root the build at `docs/` or `docs/source/`? This one is not
+cosmetic.** `docs/` currently also holds `whn_figures.py`, `make_pdf.py`, the two
+CSVs, `figs/`, and — the problem — **`kevin_comments.md` and
+`respond_to_kevin.md`**. With MyST enabled, every `.md` file under the Sphinx
+source root is built as a document. One left out of the toctree produces only a
+warning, but it is **still built and still published at a guessable URL**. So
+rooting at `docs/` would put Kevin's private review comments and your unsent
+reply on a public site, unless someone remembers an `exclude_patterns` entry
+every time a file is added.
+
+I recommend **`docs/source/`**, matching IOPtics: only the guide pages move
+there, and the correspondence, the scripts and the deprecated PDF machinery stay
+in `docs/` outside the build by construction rather than by vigilance. Tell me if
+you would rather I root at `docs/` and use `exclude_patterns`.
+
+>A. I prefer to root at `docs/`.  Use `exclude_patterns` or move the extraneous files out of `docs` into a separate location in the Repo.
+
+**Two things I will handle without asking, noted so they are on the record:**
+
+- **The CSVs need more than a plain link.** `[summary_table.csv](summary_table.csv)`
+  and the `simspec_flagged.csv` link are ordinary Markdown links; Sphinx does not
+  copy arbitrary non-document files into the build, so both would 404. I will
+  switch them to MyST's `{download}` role (or `html_extra_path`) so the files are
+  actually served. The six figures are fine — Sphinx copies images referenced by
+  image directives automatically.
+- **It is ten pages plus the appendix, not nine.** The prompt says nine because
+  the page list predates the IOP section that H3 asked me to keep. The split will
+  be: an `index` landing page carrying the byline and framing block (H2a), then
+  About the archive · Quickstart · Getting Rrs right · Reading many files · Traps
+  · Quality · Choosing your data · Known issue · Using these data for IOP
+  retrieval · Licence and citation · How these numbers were produced. Twelve
+  files including the index.
+
 ## Logs
 
 ### 2026-09-19 — HOWTO prompt 1 (document read; restructure proposed, nothing edited)
@@ -813,4 +883,90 @@ Opus 5, no subagents. `docs/WATERHYPERNET.md` rewritten as a **single file**,
   distributed in these files; I anchored it to the release notes' published
   Future Evolution bullet as well, so the claim rests on something citable in
   addition to the meeting.
+
+### 2026-09-19 — HOWTO prompt 7 (check-in only; nothing split yet)
+
+Opus 5, no subagents. Prompt 7 says "decide with me first" on the source format,
+so this turn is groundwork and a check-in — **no files split, no config written**.
+
+- **Surveyed the toolchain** rather than assuming it: sphinx 9.1.0, myst-parser
+  5.1.0, sphinx-rtd-theme, furo and pydata-sphinx-theme are all already in
+  `ocean14`. **pandoc is not installed**, which is what turns the RST question
+  from a preference into a cost.
+- **Measured that cost** instead of hand-waving it: a move to RST means hand
+  converting 7 tables (51 rows), 6 code fences, 6 images, 21 links, 1 block quote
+  and 75 bold runs over 654 lines — pure transcription risk, straight after two
+  prompts spent eliminating transcription errors.
+- **Read the IOPtics docs setup** for a house pattern: furo, `docs/source/`,
+  `docs/requirements.txt`, `.readthedocs.yaml` with `pip install .`, napoleon,
+  pure `.rst`. Recommended matching it on everything except source format, since
+  Sphinx reads `.md` and `.rst` in one project — so MyST now does not block an
+  `.rst` + autodoc API section later, which is the only real argument for RST.
+- **Found a publication hazard while working out the build root, which is the
+  thing I would not want discovered after going live.** `docs/` holds
+  `kevin_comments.md` and `respond_to_kevin.md`. With MyST enabled, every `.md`
+  under the Sphinx source root becomes a document; omitting one from the toctree
+  yields a warning but the page is **still built and still served**. Rooting at
+  `docs/` would therefore publish Kevin's private review comments and the unsent
+  reply to a public site, guarded only by someone remembering an
+  `exclude_patterns` entry. Recommended rooting at `docs/source/` so the
+  correspondence sits outside the build by construction.
+- **Two items flagged as mine to handle**: the two CSV links are plain Markdown
+  and Sphinx will not copy the files, so they need the `{download}` role or
+  `html_extra_path` or they 404; and the split is ten pages plus appendix plus an
+  index, not the nine the prompt inherited from the pre-H3 page list.
+
+### 2026-09-19 — HOWTO prompt 8 (round-4 answers actioned; RTD site built)
+
+Opus 5, no subagents. MyST + Markdown, rooted at `docs/`, per the answers.
+`sphinx-build` **succeeds with zero warnings**; `pytest -q` → 21 passed.
+
+- **Split into 12 files**: `index.md` (byline, framing block, "where to start",
+  toctree) plus `about` · `quickstart` · `rrs` · `reading-many-files` · `traps` ·
+  `quality` · `choosing` · `over-subtraction` · `iop-retrieval` · `licence` ·
+  `provenance`. Headings promoted one level per file; anchors are unchanged
+  because MyST slugs come from heading text, not level.
+- **Every cross-reference rewritten mechanically, not by eye.** Built an
+  anchor → page index from the source, then rewrote all 13 distinct in-document
+  links to `page.md` or `page.md#anchor`; `myst_heading_anchors = 3` makes the
+  sub-page ones resolve.
+- **Proved the split lost nothing** before deleting the source: a normalised
+  line-coverage check of `WATERHYPERNET.md` against the twelve pages — 492
+  content lines, **2 apparent misses, both the CSV links I had converted to
+  `{download}` roles**, confirmed present by eye. Only then was
+  `docs/WATERHYPERNET.md` removed.
+- **Validated the built HTML rather than trusting the build.** A link checker
+  over the output: **615 links across 14 pages, 0 broken** — after fixing the
+  checker itself, whose first run reported 42 failures that were all one
+  false positive (it was not stripping Sphinx's `?v=hash` cache-busters off
+  `_static` CSS).
+- **Took the safer of the two options you offered on R4-Q2.** You said
+  `exclude_patterns` *or* move the files out; I did both, because the hazard I
+  raised was precisely that a denylist depends on someone remembering it.
+  `kevin_comments.md` and `respond_to_kevin.md` now live in `correspondence/`
+  at the repo root, outside the build by construction. Verified after building:
+  no Kevin file anywhere in `_build`.
+- **The denylist still earned its keep, which makes the point.** `whn_figures.py`
+  writes `summary_table.md` into `docs/`, so it would have been published as an
+  orphan page duplicating the site table — a file nobody put there by hand and
+  nobody would have thought to check. It is in `exclude_patterns`, and `conf.py`
+  carries a module-level warning explaining why the list matters at all.
+- **Dropped the `linkify` MyST extension** rather than adding a dependency: it
+  needs `linkify-it-py`, which is not in `ocean14`, and the guide already writes
+  its bare URLs as explicit `<https://...>` autolinks that CommonMark handles.
+  The first build failed on exactly this.
+- **Confirmed the assets ship**: all six figures in `_images/`, both CSVs in
+  `_downloads/` via the `{download}` role — they were plain Markdown links and
+  would have 404'd.
+- **Matched IOPtics where it was free**: furo, `docs/requirements.txt`,
+  `.readthedocs.yaml` at the repo root (ubuntu-24.04, Python 3.12,
+  `pip install .` so autodoc can import the package), napoleon and autodoc
+  already enabled. The API slot is a commented-out second toctree in `index.md`
+  noting that those pages can be `.rst` in the same project.
+- **Housekeeping the split created**, all done: `CLAUDE.md` and `README.md`
+  rewritten for the new layout (including the every-`.md`-is-published warning
+  and a local build command), and `docs/make_pdf.py`'s docstring corrected —
+  its default target `WATERHYPERNET.md` no longer exists and
+  `respond_to_kevin.md` has moved, so running it bare now fails. Said so
+  explicitly rather than leaving a deprecated script quietly broken.
 

@@ -25,14 +25,18 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-PDF rendering of the documents under `docs/` additionally needs Google Chrome at
-the standard macOS location; everything else is pip-installable.
+To build the documentation locally:
+
+```bash
+pip install -r docs/requirements.txt
+python -m sphinx -b html docs docs/_build/html
+```
 
 ## The WATERHYPERNET Release-2 exploration
 
-An indexing and sampling pass over the 56,669-file Release-2 archive, with the
-findings written up in [`docs/WATERHYPERNET.md`](docs/WATERHYPERNET.md) (a draft
-user HOWTO). Run from the repository root, with the archive reachable at
+An indexing and sampling pass over the 56,669-file Release-2 archive, written up
+as a user guide to the archive under [`docs/`](docs/) and published with Read the
+Docs. Run from the repository root, with the archive reachable at
 `$OS_COLOR/WATERHYPERNET/RELEASE_2`:
 
 ```bash

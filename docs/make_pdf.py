@@ -8,6 +8,13 @@
    with it. Do not add new documents to it; if the RTD build covers your case,
    use that instead. Note also that it is macOS-only -- see ``CHROME`` below.
 
+   **Its defaults are now stale.** The guide it used to render,
+   ``WATERHYPERNET.md``, has been split into the per-page Markdown files that
+   make up the Sphinx site, and ``respond_to_kevin.md`` has moved to
+   ``correspondence/``. Running this script with no argument therefore fails.
+   Pass an explicit path if you need it, e.g.
+   ``python docs/make_pdf.py ../correspondence/respond_to_kevin.md``.
+
 Written because none of the usual converters (pandoc, weasyprint, wkhtmltopdf,
 python-markdown) are installed in ``ocean14``; the only PDF engine available is
 the headless Chrome already on the machine. The Markdown subset handled here is
@@ -15,10 +22,9 @@ exactly the subset used by the documents in this directory -- headings,
 paragraphs, bold/italic/inline code, fenced code blocks, pipe tables with
 alignment, images, links, block quotes, horizontal rules and simple lists.
 
-Usage::
+Usage (an explicit path is now required; see the deprecation note above)::
 
-    python make_pdf.py                       # WATERHYPERNET.md -> WATERHYPERNET.pdf
-    python make_pdf.py respond_to_kevin.md
+    python docs/make_pdf.py ../correspondence/respond_to_kevin.md
 """
 
 from __future__ import annotations

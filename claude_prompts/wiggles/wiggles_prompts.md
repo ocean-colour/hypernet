@@ -74,6 +74,11 @@ ask any further questions.  If so, ask another round of questions.  Use Fable if
 4. I have answered your third round of questions.  Read my responses and move on to generate the planning doc.  Call it `docs/wiggles_planning.md`.  
 Use Fable if you can.  Log your work.
 
+5. The planning doc looks great.  Please generate a series of prompt docs in this `claude_prompts/wiggles` folder.  I think one per phase will work fine, with names `wiggles_phase<#>_prompts.md`.  
+Have them use Opus 5.5.  Use Fable if you can for this task.  
+Log your work.  And remind me where the note to Kevin is located.  
+Or write it if you haven't yet.
+
 ## Q&A
 
 ### Setup #1 -- 2026-09-26 (drafted with Fable)
@@ -521,3 +526,30 @@ We would also ask for:
 - Open items in the doc: the SPIE volume/paper number of Ruddick et al. 2023;
   a citation for CoMet; the exact interface of `interpolate_wav_linear.py`
   (not re-read from GitHub).
+
+### 2026-09-28 -- Setup #5
+
+- A Fable subagent wrote four phase prompt docs in `claude_prompts/wiggles/`,
+  following the house structure (Goal / Conventions / Context / Prompts /
+  Q&A / Logs) and taking scope from `docs/wiggles_planning.md`:
+  - `wiggles_phase0_prompts.md`: 14 prompts.  0a covers SRF fitting on the
+    VEIT sample now; 0b covers the full request once L1A arrives; then gate
+    G0.
+  - `wiggles_phase1_prompts.md`: 12 prompts.  OSOAA build and
+    `hypernet/rt/osoaa.py`, Emod builder, twin experiment cases (i)-(vii),
+    gate G1.
+  - `wiggles_phase2_prompts.md`: 10 prompts.  `interpolate_ed_to_l`,
+    self-calibration, punpy uncertainty, drop-in snippet, exit check.
+  - `wiggles_phase3_prompts.md`: 12 prompts.  In-situ test, Ring check, the
+    PANTHYR control, gate G3, the tech note.
+- Each doc carries a **Model** bullet: use Opus 5.5 (`claude-opus-5-5`),
+  including for subagents.  Gate reports go to
+  `claude_prompts/wiggles/gate_G*.md`, never `docs/`.  Open decisions (module
+  names, figure locations and so on) are left for JXP in each Setup prompt.
+- I corrected the Phase 2 doc.  It claimed no `hypernets_processor` commit was
+  pinned, but Kevin's idea doc links commit `9a12819a3ffb...`, so Task 2 now
+  fetches that commit.
+- Wrote the draft note to Kevin, `correspondence/wiggles_note_to_kevin.md`
+  (not sent).  It gives the one-sequence finding, the generalised eq. 14, the
+  data/cal/SRF requests and the attribute-bug confirmation.  It attaches the
+  plan doc and `docs/wiggles_data_request.csv`.

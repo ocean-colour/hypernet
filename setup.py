@@ -33,6 +33,7 @@ setup_keywords['install_requires'] = [
     'hitran-api']
 setup_keywords['zip_safe'] = False
 setup_keywords['packages'] = find_packages()
+setup_keywords['package_data'] = {'hypernet': ['data/*.json']}
 
 if os.path.isdir('bin'):
     setup_keywords['scripts'] = [fname for fname in glob.glob(os.path.join('bin', '*'))

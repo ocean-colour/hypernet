@@ -18,6 +18,8 @@ Ed = np.nanmean(irr.irradiance.values, axis=1)
 vza = rad.viewing_zenith_angle.values
 print('RAD scan vza:', vza)
 R = rad.radiance.values
+# NB: labels are swapped -- vza is from nadir, so vza < 90 is the water view (Lu)
+# and vza >= 90 the sky (Ld).  See wavecal/check_vza_convention_veit.py.
 Ld = np.nanmean(R[:, vza < 90], axis=1)
 Lu = np.nanmean(R[:, vza >= 90], axis=1)
 print('n Ld scans', (vza < 90).sum(), 'n Lu scans', (vza >= 90).sum())

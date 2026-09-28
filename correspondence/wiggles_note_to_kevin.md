@@ -58,7 +58,11 @@ sequence, so treat it as a lead.
    The `bandwidth` variable is a flat 3.0 nm, so I assume no per-pixel SRF is
    stored.
 4. **The processor version** that produced Release 2 L1C.
-5. **Your view on the hypothesis.**  Is there a known reason the irradiance
+5. **Air or vacuum?**  Is the HYPSTAR wavelength calibration on an air or a
+   vacuum scale?  The two differ by 0.1–0.2 nm in the visible, which matters
+   when we compare line centres with laboratory wavelengths and with TSIS-1
+   HSRS (vacuum).
+6. **Your view on the hypothesis.**  Is there a known reason the irradiance
    and radiance paths would give different line widths, e.g. diffuser vs
    fore-optics filling the slit differently?
 

@@ -69,8 +69,9 @@ refinement rather than a requirement and Phase 2 defaults to eq. (14).
 - **From Phase 0a:** `hypernet/data/veit_srf_model.json` (E, Ld, Lu FWHM(λ)
   models), the per-scan noise levels (Phase 0 task 6), the module names
   chosen there.  The real E (1536 px) and L (1538 px) grids come from the
-  VEIT sample at `$OS_COLOR/WATERHYPERNET/Wavelengths/`; HYPSTAR sky
-  geometry there: Ld at `viewing_zenith_angle` ≈ 40°, Lu at ≈ 140°, SZA 36.7°.
+  VEIT sample at `$OS_COLOR/WATERHYPERNET/Wavelengths/`; HYPSTAR geometry
+  there (vza is measured from nadir): Lu at `viewing_zenith_angle` ≈ 40°
+  (water, 40° off nadir), Ld at ≈ 140° (sky, 40° off zenith), SZA 36.7°.
 - **Paper:** `context/papers/ruddick2023.pdf` (eqs. 11-15, §3 simulations).
 
 ### Dependencies

@@ -115,3 +115,86 @@ def test_scan_errors():
     assert mean.shape == (200,)
     np.testing.assert_allclose(e_scan, scans.std(axis=1, ddof=1))
     np.testing.assert_allclose(e_mean, e_scan / np.sqrt(6))
+
+
+# --- FWHM(lambda) model -------------------------------------------------------
+
+LAM_PTS = np.array([393.4, 430.8, 486.1, 517.3, 589.3, 656.3, 849.8, 866.2])
+TRUE = np.array([3.0, 0.4, -0.25])  # FWHM at 600 nm, slope, curvature (x = (lam-600)/100)
+
+
+def _quad(lam, c=TRUE):
+    x = (lam - srf.LAM_REF) / srf.LAM_SCALE
+    return c[0] + c[1] * x + c[2] * x ** 2
+
+
+def test_fwhm_model_exact_quadratic():
+    fw = _quad(LAM_PTS)
+    coeffs, cov = srf.fit_fwhm_model(LAM_PTS, fw, np.full_like(fw, 0.05))
+    np.testing.assert_allclose(coeffs, TRUE, atol=1e-10)
+    np.testing.assert_allclose(srf.fwhm_at(LAM_PTS, coeffs), fw, atol=1e-10)
+    assert isinstance(srf.fwhm_at(500.0, coeffs), float)
+    # at lam_ref the error is sqrt(cov[0, 0])
+    assert srf.fwhm_err_at(srf.LAM_REF, cov) == pytest.approx(np.sqrt(cov[0, 0]))
+
+
+def test_fwhm_model_cov_shrinks_with_err():
+    fw = _quad(LAM_PTS)
+    _, cov1 = srf.fit_fwhm_model(LAM_PTS, fw, np.full_like(fw, 0.10))
+    _, cov2 = srf.fit_fwhm_model(LAM_PTS, fw, np.full_like(fw, 0.05))
+    np.testing.assert_allclose(cov2, cov1 / 4.0)
+    assert np.all(np.diag(cov2) < np.diag(cov1))
+
+
+def test_fwhm_model_weights_and_bad_points():
+    rng = np.random.default_rng(3)
+    err = rng.uniform(0.02, 0.2, LAM_PTS.size)
+    fw = _quad(LAM_PTS) + rng.normal(0.0, err)
+    fw_bad = np.append(fw, [np.nan, 9.0])
+    err_bad = np.append(err, [0.1, 0.0])       # NaN value, zero error: dropped
+    lam_bad = np.append(LAM_PTS, [700.0, 750.0])
+    c1, _ = srf.fit_fwhm_model(LAM_PTS, fw, err)
+    c2, _ = srf.fit_fwhm_model(lam_bad, fw_bad, err_bad)
+    np.testing.assert_allclose(c1, c2)
+    # too few points -> NaN, not an exception
+    c, cov = srf.fit_fwhm_model(LAM_PTS[:2], fw[:2], err[:2])
+    assert np.all(np.isnan(c)) and np.all(np.isnan(cov))
+
+
+def test_srfmodel_json_roundtrip(tmp_path):
+    fw = _quad(LAM_PTS)
+    coeffs, cov = srf.fit_fwhm_model(LAM_PTS, fw, np.full_like(fw, 0.05))
+    m = srf.SRFModel('E', coeffs, cov, offset=0.03, offset_err=0.01,
+                     lam_min=393.4, lam_max=866.2, npts=8,
+                     instrument='HYPSTAR_122304', meta={'seq': 'SEQ20260604T084543'})
+    m2 = srf.SRFModel.from_json(m.to_json())
+    np.testing.assert_array_equal(m2.coeffs, m.coeffs)
+    np.testing.assert_array_equal(m2.cov, m.cov)
+    assert (m2.channel, m2.offset, m2.instrument, m2.meta) == \
+        (m.channel, m.offset, m.instrument, m.meta)
+    assert np.isnan(m2.chi2_nu)          # NaN survives as JSON null
+    assert 'NaN' not in m.to_json()
+    # file round trip, single and several models
+    p = tmp_path / 'e.json'
+    m.to_json(p)
+    assert srf.SRFModel.from_json(p).fwhm(500.0) == pytest.approx(m.fwhm(500.0))
+    mL = srf.SRFModel('Ld', coeffs + 0.2, cov)
+    srf.save_srf_models(tmp_path / 'all.json', [m, mL], meta={'site': 'VEIT'})
+    got = srf.load_srf_models(tmp_path / 'all.json')
+    assert set(got) == {'E', 'Ld'}
+    assert got['Ld'].fwhm(600.0) == pytest.approx(TRUE[0] + 0.2)
+
+
+def test_srfmodel_from_lines():
+    # synthetic spectrum: every line at +0.04 nm, sigma following TRUE
+    L = srf.LINES
+    comps = [(0.3, lam + 0.04, _quad(lam) / srf.FWHM_PER_SIGMA) for lam in L['lam_air']]
+    y = _lines(WAV, comps)
+    df = srf.fit_lines(WAV, y, err=np.full_like(WAV, 0.01))
+    m = srf.SRFModel.from_lines('E', df, instrument='test')
+    use = df['ok'] & df['use_for_srf']
+    assert m.npts == use.sum() >= 8
+    np.testing.assert_allclose(m.coeffs, TRUE, atol=0.02)
+    assert m.offset == pytest.approx(0.04, abs=0.01)
+    assert m.lam_min == pytest.approx(393.366) and m.frame == 'air'
+    assert m.sigma(600.0) == pytest.approx(TRUE[0] / srf.FWHM_PER_SIGMA, abs=0.01)

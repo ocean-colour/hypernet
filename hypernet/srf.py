@@ -5,7 +5,10 @@ The SRF of each channel is parameterised as a Gaussian whose FWHM varies
 smoothly with wavelength.  This module measures it from the data: every line
 in :data:`LINES` is fitted with a Gaussian absorption profile on a linear
 continuum, which gives a centroid (wavelength calibration) and a width
-(resolution) per line.
+(resolution) per line.  :func:`fit_fwhm_model` then fits a quadratic
+FWHM(lambda) to the line widths of one channel, and :class:`SRFModel` holds
+the result (with the channel's mean centroid offset) and reads and writes it
+as JSON.
 
 A fitted Gaussian measures the SRF convolved with the line's intrinsic
 profile, not the SRF itself.  Blends and bands (Ca H/K, G band, Mg b, Na D,
@@ -18,6 +21,10 @@ Wavelengths are in nm.  Laboratory wavelengths are given in air, with vacuum
 values from :func:`air_to_vac`; which scale the HYPSTAR calibration uses is
 not yet known.
 """
+
+import dataclasses
+import json
+import os
 
 import numpy as np
 import pandas as pd
@@ -269,3 +276,235 @@ def fit_lines(wav, spec, lines=LINES, err=None, lam_col='lam_air'):
     out['dmu'] = out['mu'] - out[lam_col]
     out['ok'] = out['ok'].astype(bool)
     return out
+
+
+# --- FWHM(lambda) model -------------------------------------------------------
+
+#: Default reference wavelength and scale of the FWHM polynomial, nm.  The
+#: polynomial is in x = (lam - LAM_REF) / LAM_SCALE, so coeffs[0] is the FWHM
+#: at LAM_REF and the coefficients are well conditioned.
+LAM_REF = 600.0
+LAM_SCALE = 100.0
+
+
+def _design(lam, deg, lam_ref, lam_scale):
+    x = (np.asarray(lam, dtype=float) - lam_ref) / lam_scale
+    return np.vander(np.atleast_1d(x), deg + 1, increasing=True)
+
+
+def fit_fwhm_model(lam, fwhm, err, deg=2, lam_ref=LAM_REF, lam_scale=LAM_SCALE,
+                   scale_cov=False):
+    """Weighted least-squares polynomial (default quadratic) FWHM(lambda).
+
+    ``FWHM = sum_k coeffs[k] x**k`` with ``x = (lam - lam_ref) / lam_scale``.
+    The covariance is ``(A^T W A)^-1`` with ``W = 1/err**2``, i.e. it takes
+    ``err`` as absolute 1-sigma errors.  Points with a non-finite value or a
+    non-positive error are dropped.  With fewer than ``deg + 1`` points left,
+    the coefficients and covariance are NaN.
+
+    Args:
+        lam (array): line wavelengths, nm.
+        fwhm (array): fitted FWHM at each line, nm.
+        err (array): 1-sigma error of each FWHM, nm.
+        deg (int): polynomial degree.
+        lam_ref (float): reference wavelength, nm.
+        lam_scale (float): wavelength scale, nm.
+        scale_cov (bool): multiply the covariance by ``chi2_nu`` when it
+            exceeds 1 (when the scatter about the model exceeds ``err``).
+
+    Returns:
+        tuple: (coeffs, cov) -- arrays of shape (deg+1,) and (deg+1, deg+1).
+    """
+    lam, fwhm, err = (np.asarray(a, dtype=float).ravel() for a in (lam, fwhm, err))
+    m = np.isfinite(lam) & np.isfinite(fwhm) & np.isfinite(err) & (err > 0)
+    npar = deg + 1
+    if m.sum() < npar:
+        return np.full(npar, np.nan), np.full((npar, npar), np.nan)
+    A = _design(lam[m], deg, lam_ref, lam_scale)
+    w = 1.0 / err[m] ** 2
+    cov = np.linalg.inv(A.T @ (A * w[:, None]))
+    coeffs = cov @ (A.T @ (w * fwhm[m]))
+    if scale_cov and m.sum() > npar:
+        chi2_nu = np.sum(w * (fwhm[m] - A @ coeffs) ** 2) / (m.sum() - npar)
+        cov = cov * max(chi2_nu, 1.0)
+    return coeffs, cov
+
+
+def fwhm_at(lam, coeffs, lam_ref=LAM_REF, lam_scale=LAM_SCALE):
+    """Evaluate the FWHM(lambda) polynomial (nm) at ``lam`` (nm)."""
+    coeffs = np.asarray(coeffs, dtype=float)
+    y = _design(lam, coeffs.size - 1, lam_ref, lam_scale) @ coeffs
+    return y if np.ndim(lam) else float(y[0])
+
+
+def fwhm_err_at(lam, cov, lam_ref=LAM_REF, lam_scale=LAM_SCALE):
+    """1-sigma error (nm) of the FWHM(lambda) polynomial at ``lam`` (nm)."""
+    cov = np.asarray(cov, dtype=float)
+    A = _design(lam, cov.shape[0] - 1, lam_ref, lam_scale)
+    y = np.sqrt(np.einsum('ij,jk,ik->i', A, cov, A))
+    return y if np.ndim(lam) else float(y[0])
+
+
+def _nan_to_none(v):
+    """Replace NaN by None, recursively, so the JSON is standard."""
+    if isinstance(v, (list, tuple)):
+        return [_nan_to_none(u) for u in v]
+    if isinstance(v, float) and not np.isfinite(v):
+        return None
+    return v
+
+
+def _none_to_nan(v):
+    if isinstance(v, list):
+        return [_none_to_nan(u) for u in v]
+    return np.nan if v is None else v
+
+
+@dataclasses.dataclass
+class SRFModel:
+    """Gaussian SRF of one channel: FWHM(lambda) and a centroid offset.
+
+    Attributes:
+        channel (str): e.g. ``'E'``, ``'Ld'``, ``'Lu'``.
+        coeffs (np.ndarray): FWHM polynomial coefficients in
+            ``x = (lam - lam_ref) / lam_scale``, nm.
+        cov (np.ndarray): covariance of ``coeffs``, nm^2.
+        offset (float): mean centroid offset, measured minus laboratory, nm.
+        offset_err (float): its 1-sigma error, nm.
+        lam_min, lam_max (float): wavelength range of the lines used, nm.
+        lam_ref, lam_scale (float): polynomial reference and scale, nm.
+        chi2_nu (float): reduced chi^2 of the FWHM fit.
+        npts (int): number of lines in the FWHM fit.
+        instrument (str): instrument id (e.g. ``'HYPSTAR_122304'``).
+        frame (str): wavelength scale of ``offset`` (``'air'`` or ``'vac'``).
+        meta (dict): free-form provenance (sequence, method, ...).
+    """
+    channel: str
+    coeffs: np.ndarray
+    cov: np.ndarray
+    offset: float = np.nan
+    offset_err: float = np.nan
+    lam_min: float = np.nan
+    lam_max: float = np.nan
+    lam_ref: float = LAM_REF
+    lam_scale: float = LAM_SCALE
+    chi2_nu: float = np.nan
+    npts: int = 0
+    instrument: str = ''
+    frame: str = 'air'
+    meta: dict = dataclasses.field(default_factory=dict)
+
+    def __post_init__(self):
+        self.coeffs = np.asarray(self.coeffs, dtype=float)
+        self.cov = np.asarray(self.cov, dtype=float)
+
+    def fwhm(self, lam):
+        """FWHM (nm) at ``lam`` (nm)."""
+        return fwhm_at(lam, self.coeffs, self.lam_ref, self.lam_scale)
+
+    def fwhm_err(self, lam):
+        """1-sigma error of the FWHM (nm) at ``lam`` (nm)."""
+        return fwhm_err_at(lam, self.cov, self.lam_ref, self.lam_scale)
+
+    def sigma(self, lam):
+        """Gaussian sigma (nm) at ``lam`` (nm)."""
+        return self.fwhm(lam) / FWHM_PER_SIGMA
+
+    @classmethod
+    def from_lines(cls, channel, fits, deg=2, lam_col='lam_air',
+                   scale_cov=False, **kwargs):
+        """Build a model from a :func:`fit_lines` table.
+
+        The FWHM(lambda) fit uses the rows with ``ok`` and ``use_for_srf``.
+        The offset is the weighted mean of ``dmu`` over the rows that are
+        also not ``blend`` (the clean lines).  Its error is the error of the
+        weighted mean, inflated by ``sqrt(chi2_nu)`` when the scatter exceeds
+        the errors.
+
+        Args:
+            channel (str): channel name.
+            fits (pd.DataFrame): output of :func:`fit_lines`.
+            deg (int): polynomial degree.
+            lam_col (str): column used as the line wavelength.
+            scale_cov (bool): passed to :func:`fit_fwhm_model`.
+            **kwargs: other :class:`SRFModel` fields (instrument, meta, ...).
+
+        Returns:
+            SRFModel
+        """
+        use = fits['ok'].astype(bool) & fits['use_for_srf'].astype(bool)
+        f = fits[use]
+        lam_ref = kwargs.pop('lam_ref', LAM_REF)
+        lam_scale = kwargs.pop('lam_scale', LAM_SCALE)
+        coeffs, cov = fit_fwhm_model(f[lam_col], f['fwhm'], f['fwhm_err'],
+                                     deg=deg, lam_ref=lam_ref,
+                                     lam_scale=lam_scale, scale_cov=scale_cov)
+        chi2_nu = np.nan
+        if len(f) > deg + 1 and np.all(np.isfinite(coeffs)):
+            r = (f['fwhm'] - fwhm_at(f[lam_col].values, coeffs, lam_ref,
+                                     lam_scale)) / f['fwhm_err']
+            chi2_nu = float(np.sum(r ** 2) / (len(f) - deg - 1))
+        clean = f[~f['blend'].astype(bool)]
+        clean = clean[np.isfinite(clean['mu_err']) & (clean['mu_err'] > 0)]
+        offset = offset_err = np.nan
+        if len(clean):
+            w = 1.0 / clean['mu_err'].values ** 2
+            offset = float(np.sum(w * clean['dmu']) / np.sum(w))
+            offset_err = float(1.0 / np.sqrt(np.sum(w)))
+            if len(clean) > 1:
+                chi2_off = np.sum(w * (clean['dmu'] - offset) ** 2) / (len(clean) - 1)
+                offset_err *= np.sqrt(max(chi2_off, 1.0))
+        return cls(channel=channel, coeffs=coeffs, cov=cov, offset=offset,
+                   offset_err=offset_err,
+                   lam_min=float(f[lam_col].min()) if len(f) else np.nan,
+                   lam_max=float(f[lam_col].max()) if len(f) else np.nan,
+                   lam_ref=lam_ref, lam_scale=lam_scale, chi2_nu=chi2_nu,
+                   npts=int(len(f)),
+                   frame='vac' if lam_col == 'lam_vac' else 'air', **kwargs)
+
+    def to_dict(self):
+        """Plain-Python dict (lists, NaN as None)."""
+        d = dataclasses.asdict(self)
+        d['coeffs'] = self.coeffs.tolist()
+        d['cov'] = self.cov.tolist()
+        return {k: _nan_to_none(v) for k, v in d.items()}
+
+    @classmethod
+    def from_dict(cls, d):
+        d = {k: _none_to_nan(v) for k, v in d.items()}
+        return cls(**d)
+
+    def to_json(self, path=None, indent=2):
+        """JSON string; also written to ``path`` if given."""
+        s = json.dumps(self.to_dict(), indent=indent)
+        if path is not None:
+            with open(path, 'w') as fh:
+                fh.write(s + '\n')
+        return s
+
+    @classmethod
+    def from_json(cls, s):
+        """From a JSON string or the path of a JSON file."""
+        if os.path.exists(str(s)):
+            with open(s) as fh:
+                s = fh.read()
+        return cls.from_dict(json.loads(s))
+
+
+def save_srf_models(path, models, meta=None, indent=2):
+    """Write several :class:`SRFModel` to one JSON file, keyed by channel."""
+    doc = {'meta': meta or {},
+           'models': {m.channel: m.to_dict() for m in models}}
+    with open(path, 'w') as fh:
+        fh.write(json.dumps(doc, indent=indent) + '\n')
+
+
+def load_srf_models(path):
+    """Read a file written by :func:`save_srf_models`.
+
+    Returns:
+        dict: channel -> :class:`SRFModel`.
+    """
+    with open(path) as fh:
+        doc = json.load(fh)
+    return {k: SRFModel.from_dict(v) for k, v in doc['models'].items()}

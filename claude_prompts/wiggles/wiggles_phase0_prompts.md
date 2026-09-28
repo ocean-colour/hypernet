@@ -26,7 +26,7 @@ goes into the function first.
 - **JXP runs git.**  Claude does not run any state-changing git command.
 - Run scripts **from the repository root** so `hypernet` imports resolve
   (`python -m hypernet.whn_explore 1`, `python wiggles/phase0a_veit.py`).
-- Run `pytest -q` after each step where relevant.  29 tests today; the archive-
+- Run `pytest -q` after each step where relevant.  34 tests today; the archive-
   dependent ones skip themselves when `$OS_COLOR` is not mounted.
 - **Tier 2** -- steps that read the VEIT sample or the archive need `$OS_COLOR`
   mounted.  Do **not** unset `$OS_COLOR`.
@@ -473,3 +473,43 @@ All defaults were accepted, except that Q5 uses `wiggles` instead of
 - `pytest -q`: **29 passed** (21 + 8).
 - Not yet run on the VEIT sample; that is task 5, after the readers in task
   4.
+
+### 2026-09-28 -- Build #3 (Opus 5.5)
+
+- Added the FWHM(λ) model to `hypernet/srf.py`:
+  - `fit_fwhm_model(lam, fwhm, err, deg=2, lam_ref=600, lam_scale=100,
+    scale_cov=False)`.
+    - A weighted least-squares polynomial in x = (λ − 600 nm)/100 nm, so
+      `coeffs[0]` is the FWHM at 600 nm and the fit is well conditioned.
+    - Returns `(coeffs, cov)` with cov = (AᵀWA)⁻¹, taking `err` as absolute.
+    - `scale_cov=True` inflates cov by χ²_ν when χ²_ν > 1.  This is useful
+      because blend-biased widths will scatter more than their errors.
+    - Drops non-finite points and points with error ≤ 0, and returns NaN when
+      fewer than deg + 1 points remain.
+  - `fwhm_at(lam, coeffs)` and `fwhm_err_at(lam, cov)` (the propagated
+    1-sigma error), both taking the same `lam_ref` / `lam_scale` keywords.
+  - The `SRFModel` dataclass:
+    - Fields: `channel, coeffs, cov, offset, offset_err, lam_min, lam_max,
+      lam_ref, lam_scale, chi2_nu, npts, instrument, frame, meta`.
+    - Methods: `fwhm()`, `fwhm_err()`, `sigma()`, `to_dict/from_dict`, and
+      `to_json(path=None)` / `from_json(str_or_path)`.  NaN is written as
+      JSON `null`, so the files are standard JSON.
+  - Additions beyond the spec, for task 5:
+    - `SRFModel.from_lines(channel, fits)`: fits FWHM(λ) to the `ok &
+      use_for_srf` rows of a `fit_lines` table.  `offset` is the weighted mean
+      of `dmu` over the unblended lines (Hα, Hβ, the Ca II IR triplet; Q&A
+      Q8), with its error inflated by √χ²_ν when the lines disagree.
+    - `save_srf_models(path, models, meta)` and `load_srf_models(path)`: one
+      JSON file holding several channels, as
+      `hypernet/data/veit_srf_model.json` will.
+- `offset` is absolute (measured − laboratory, in `frame` = air by default).
+  The relative L − E offset is the difference of two models' offsets, or is
+  taken per line in task 5.
+- Tests added to `hypernet/tests/test_srf.py`:
+  - an exact quadratic recovered to 1e-10;
+  - the covariance scaling as err² (err halved gives cov/4);
+  - bad points dropped, and too few points giving NaN;
+  - JSON round trips (string, file, several models, NaN ↔ null);
+  - `from_lines` on a synthetic 13-line spectrum recovering the quadratic to
+    0.02 nm and a +0.04 nm offset.
+- `pytest -q`: **34 passed**.

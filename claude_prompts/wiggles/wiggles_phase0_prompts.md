@@ -218,4 +218,158 @@ goes into the function first.
 
 ## Q&A
 
+### Setup #1 -- 2026-09-28 (Opus 5.5)
+
+**What I found reading the inputs**
+
+1. **The Ld/Lu split in the scripts is reversed.**  `line_fits_veit.py` sets
+   Ld = `viewing_zenith_angle < 90`, but the convention is measured from
+   nadir.  L1A_IRR, which looks up, has vza = 179.9.  In L1A_RAD the 6 scans
+   at vza = 40.19 are the **water** view (Lu).  The 6 at 140.03 / 139.94 are
+   the **sky** (Ld), taken as 3 before and 3 after the water scans.
+   `wavecal/check_vza_convention_veit.py` shows it:
+   - The vza < 90 mean equals L1C `upwelling_radiance` exactly (median
+     relative difference 0).
+   - The vza ≥ 90 mean matches L1C `downwelling_radiance` to 2 × 10⁻³.
+   - The sky is 5-11x brighter than the water view.
+
+   Consequences:
+   - The "FWHM Ld" and "FWHM Lu" columns of the plan §2.3 table are swapped.
+   - The "centroid L − E" column came from the water view, not the sky.
+   - The conclusion stands (E sharper than L in the blue, the two L views
+     agree), but the labels are wrong.
+   - The same slip is in task 4 of this doc, in the Phase 1 doc (Context,
+     "Ld at `viewing_zenith_angle` ≈ 40°, Lu at ≈ 140°") and possibly in the
+     note to Kevin, which does not quote vza.
+   - L1A_RAD has **12** scans, not 6, so the task 4 test needs changing.
+   - `sanity_checks_veit.py` is unaffected: it takes Ld and Lu from the L1C
+     variables.
+2. **A Gaussian fitted to a solar feature measures the SRF convolved with the
+   line, not the SRF itself.**  Several entries in the list are not single
+   narrow lines:
+   - Ca H/K have broad cores and damping wings reaching past the ±4 nm
+     window, so the linear "continuum" sits inside the wing.
+   - The G band is a CH molecular band.
+   - Mg b is a triplet (516.7 / 517.3 / 518.4 nm).
+   - Na D is a doublet 0.6 nm apart.
+   - Hα and Hβ have wide wings.
+   - O2-A and O2-B are rotational bands.  Their envelope shape depends on air
+     mass, which differs between the direct beam and the sky path.
+
+   For the E-vs-L and stability tests (G0 a/b) the intrinsic profile is common
+   to both channels and largely cancels.  For the **absolute** FWHM(λ) handed
+   to Phase 1 it does not: the empirical widths are biased high by a
+   line-dependent amount, and a quadratic will absorb that bias as spurious
+   shape.  The clean fix is a forward-model fit: convolve TSIS-1 HSRS (plus
+   HAPI O2 for the bands) with a Gaussian SRF, then fit σ, shift, scale and
+   continuum.  Blends and bands come out right automatically.  The cost is
+   bringing the HSRS download forward from Phase 1.
+3. **Air vs vacuum.**  The λ_lab values in the list are air wavelengths
+   (Hα 656.28), whereas TSIS-1 HSRS is on a vacuum scale.  The difference is
+   0.1-0.2 nm, the same size as the G0(c) threshold.  We do not know which
+   scale the HYPSTAR wavelength calibration uses.
+4. **G0(c) is ambiguous.**  "Centroid offsets exceed ~0.1 nm" could mean L − E
+   (relative, which drives H1) or measured − laboratory (absolute, which
+   drives a recalibration).  An absolute centroid means little on a blended
+   feature.
+5. **The red lever arm is thin.**  Above 660 nm the list has only Hα, the two
+   O2 bands and the 936 nm H₂O band, and none of the bands is a clean SRF
+   probe.  The Ca II infrared triplet (849.8 / 854.2 / 866.2 nm) is strong,
+   solar, fairly free of telluric lines and inside the 350-1100 nm range.
+   The water view is faint in the red (3.0 vs 34 at 650 nm), so red fits in
+   Lu will be noisier.
+6. **The uncertainties are not yet real.**  `curve_fit` with no `sigma`
+   rescales the covariance by the residuals, so model mismatch leaks into the
+   errors, and L1A carries no uncertainty variables.  Task 6 compares scan
+   scatter against these errors, so the choice matters.
+7. **Packaging.**  `setup.py` has no `package_data`, so `hypernet/data/*.json`
+   would not ship with a non-editable install.
+
+**Questions for JXP** (each has a default; say "defaults" to accept them all)
+
+1. **Module names.**  *Default: `hypernet/srf.py` (SRF model + line fits,
+   instrument-agnostic, hence no `whn_` prefix) and `hypernet/whn_l1a.py`
+   (L1A/L1C/L2A readers).  No subpackage.*
+2. **Empirical Gaussian or HSRS forward model?**  *Default: both.*
+   - Tasks 2-3 as written (empirical Gaussian): fast, and adequate for the
+     relative tests (E vs L, stability).
+   - A task 3b: `fit_srf_template(wav, spec, hsrs, ...)`, fitting σ(λ) and the
+     shift against HSRS convolved with the SRF.  Its `SRFModel` is the one
+     written to `hypernet/data/veit_srf_model.json` for Phase 1.
+   - The empirical fit stays as a cross-check.
+
+   This pulls the HSRS download (a Phase 1 task) into Phase 0.
+3. **Ca H/K.**  *Default: a joint fit over ~389-401 nm with two Gaussians,
+   separate σ and depth, one linear continuum.  Both lines enter the
+   FWHM(λ) fit but are flagged `blend`.  With the template fit (Q2) the issue
+   goes away.*
+4. **Line list.**  *Default:*
+   - *936 nm H₂O stays as a diagnostic row (`use_for_srf=False`), out of the
+     FWHM(λ) fit.*
+   - *O2-A and O2-B are treated the same way in the empirical fit, and used in
+     the template fit only with HAPI O2.*
+   - *Add the Ca II infrared triplet (849.8, 854.2, 866.2 nm) to anchor the
+     red.*
+   - *The `LINES` table carries `lam_air`, `lam_vac`, `half`, `group` and
+     `use_for_srf`.*
+5. **Where outputs go.**  *Default: figures in `wavecal/figs/phase0/`, small
+   CSVs in `wavecal/`, and the SRF JSON in `hypernet/data/` with
+   `package_data={'hypernet': ['data/*.json']}` added to `setup.py`.*
+6. **Fit uncertainties.**  *Default:*
+   - *Per-pixel σ = scan-to-scan std/√N for the mean spectra.*
+   - *For single scans, σ = that std × √(N/(N−1)).*
+   - *Fit with `absolute_sigma=True`.*
+   - *Report χ²_ν per line: a large χ²_ν is the first sign that the Gaussian
+     is the wrong shape (plan §9).*
+7. **Fixing the Ld/Lu slip.**  *Default:*
+   - *The reader in task 4 uses Lu = vza < 90 and Ld = vza ≥ 90, and checks
+     both against L1C.*
+   - *The task 4 test expects 6 IRR scans and 6 + 6 RAD scans.*
+   - *Correct the Phase 1 Context line.*
+   - *Leave `line_fits_veit.py` as a historical exploratory script, with a
+     one-line comment pointing to the fix.*
+   - *Correct the §2.3 column headers in `docs/wiggles_planning.md` after
+     task 5 re-derives the table.*
+
+   `docs/` is published, so I will not touch it without your OK.
+8. **Air or vacuum, and G0(c).**  *Default:*
+   - *Ask Kevin which scale the HYPSTAR wavelength calibration uses; assume
+     air until he answers.*
+   - *G0(c) tests both the relative (L − E) and the absolute (vs laboratory)
+     offset against 0.1 nm.*
+   - *The absolute offset is tested on unblended lines only (Hα, Hβ, Ca II
+     IR), or on the template-fit shift.*
+
 ## Logs
+
+### 2026-09-28 -- Setup #1 (Opus 5.5)
+
+- Read this doc, plan §2.3/§4/§5/§9 of `docs/wiggles_planning.md`, the setup
+  doc `wiggles_prompts.md` (Q&A and Logs), and `wavecal/line_fits_veit.py` and
+  `wavecal/sanity_checks_veit.py` in full.  Inspected the VEIT sample's
+  dimensions and geometry:
+  - L1A_IRR: 1536 px × 6 scans.
+  - L1A_RAD: 1538 px × 12 scans.
+  - L1C: 6 scans, vza = 40.19.
+  - L2A: 1 series.
+  - Both grids span 350-1100 nm.
+- Found that the Ld/Lu split used so far is reversed: vza = 40 is the water
+  view and vza = 140 is the sky.  Wrote
+  `wavecal/check_vza_convention_veit.py` to show it against the L1C
+  variables.  This is the only file added; no package code was written.
+- Wrote 7 findings and 8 questions with defaults to Q&A.  They cover:
+  - module names;
+  - empirical vs HSRS-template SRF fitting;
+  - the Ca H/K blend;
+  - the line list (936 nm, O2 bands, Ca II IR triplet);
+  - output locations and `package_data`;
+  - fit weighting;
+  - fixing the Ld/Lu slip;
+  - air/vacuum and the meaning of G0(c).
+- Learned:
+  - `setup.py` has no `package_data`.
+  - `sanity_checks_veit.py` reads Ld/Lu from L1C, so it is unaffected by the
+    swap.
+  - The Phase 1 prompt doc repeats the swapped vza labels in its Context
+    section.
+- No pytest run (no package code changed).

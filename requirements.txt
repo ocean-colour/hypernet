@@ -25,3 +25,12 @@ pyarrow
 
 # Data retrieval from the HYPERNETS data portal
 requests
+
+# Uncertainty propagation (NPL CoMet toolkit, as used by hypernets_processor)
+punpy
+comet_maths
+obsarray
+
+# High-resolution gas absorption (HITRAN API).  Local editable clone at
+# ~/Oceanography/python/HAPI (pip install -e); PyPI name is hitran-api.
+hitran-api

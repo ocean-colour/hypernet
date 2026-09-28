@@ -26,7 +26,11 @@ setup_keywords['install_requires'] = [
     # netCDF / data handling (HYPSTAR products are netCDF)
     'xarray', 'netcdf4', 'h5netcdf', 'h5py', 'cftime', 'pyarrow',
     # Data retrieval from the HYPERNETS data portal
-    'requests']
+    'requests',
+    # Uncertainty propagation (NPL CoMet toolkit)
+    'punpy', 'comet_maths', 'obsarray',
+    # High-resolution gas absorption (HITRAN API)
+    'hitran-api']
 setup_keywords['zip_safe'] = False
 setup_keywords['packages'] = find_packages()
 

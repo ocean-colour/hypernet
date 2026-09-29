@@ -1,0 +1,4 @@
+system_id,cal_period,channel,n,sites,fwhm_400_mean,fwhm_400_std,fwhm_400_range,fwhm_500_mean,fwhm_500_std,fwhm_500_range,fwhm_600_mean,fwhm_600_std,fwhm_600_range,fwhm_700_mean,fwhm_700_std,fwhm_700_range,max_std,passes_0p2,offset_L_E_mean,offset_L_E_std,dfwhm_450_L_E_mean,dfwhm_450_L_E_std
+HYPSTAR_122304,2024-11-08/2024-11-12,E,1,VEIT,2.3458,,0.0000,2.2342,,0.0000,2.2125,,0.0000,2.2808,,0.0000,,,,,,
+HYPSTAR_122304,2024-11-08/2024-11-12,Ld,1,VEIT,2.8751,,0.0000,2.7357,,0.0000,2.6370,,0.0000,2.5790,,0.0000,,,0.0392,,0.5216,
+HYPSTAR_122304,2024-11-08/2024-11-12,Lu,1,VEIT,2.9209,,0.0000,2.7327,,0.0000,2.6319,,0.0000,2.6186,,0.0000,,,-0.0305,,0.5371,

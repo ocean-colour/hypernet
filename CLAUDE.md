@@ -20,6 +20,16 @@ Repository layout:
     `python -m hypernet.whn_explore 1|2`.
   - `whn_simspec_check.py` — the Similarity-Spectrum over-subtraction scan at
     the dark sites.  `python -m hypernet.whn_simspec_check`.
+  - `srf.py` — spectral response functions: the line table, Gaussian line
+    fits, FWHM(λ) models (`SRFModel`, JSON), and the HSRS template SRF fit.
+  - `whn_l1a.py` — L1A/L1C/L2A readers (vza is from nadir: < 90 = water/Lu,
+    ≥ 90 = sky/Ld) and delivery indexing against the data request.
+  - `whn_srf.py` — per-sequence SRF fits (E, Ld, Lu; empirical + template).
+  - `refspec.py` — TSIS-1 HSRS fetch/load (file in `$OS_COLOR/hypernet/ref`).
+  - `data/` — small committed products, e.g. `veit_srf_model.json`.
+  - `wiggles/` — the wiggles effort's Phase 0 scripts, as a subpackage:
+    `python -m hypernet.wiggles.phase0a_veit` etc.; committed CSVs and
+    `figs/phase0/` live alongside.  Prompts: `claude_prompts/wiggles/`.
   - `hypernet/tests/` — pytest tests (`pytest.ini` points `testpaths` here).
 - `docs/` — **the Sphinx source root** for the WATERHYPERNET user guide, built
   by Read the Docs (`.readthedocs.yaml` at the repo root, `docs/conf.py`,

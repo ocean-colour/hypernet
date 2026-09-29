@@ -25,8 +25,8 @@ goes into the function first.
   subagents (pass `model: opus`).
 - **JXP runs git.**  Claude does not run any state-changing git command.
 - Run scripts **from the repository root** so `hypernet` imports resolve
-  (`python -m hypernet.whn_explore 1`, `python wiggles/phase0a_veit.py`).
-- Run `pytest -q` after each step where relevant.  43 tests today; the archive-
+  (`python -m hypernet.whn_explore 1`, `python -m hypernet.wiggles.phase0a_veit`).
+- Run `pytest -q` after each step where relevant.  55 tests today; the archive-
   dependent ones skip themselves when `$OS_COLOR` is not mounted.
 - **Tier 2** -- steps that read the VEIT sample or the archive need `$OS_COLOR`
   mounted.  Do **not** unset `$OS_COLOR`.
@@ -34,10 +34,15 @@ goes into the function first.
 - Data intermediates (parquet/npz) go **outside** the repo under
   `$OS_COLOR/hypernet/wiggles/phase0/`; only figures and small tables are
   committed.
-- **Paths** (Q&A Setup #1, Q5): new Phase 0 scripts, figures and small
-  tables go in the top-level `wiggles/` directory (`wiggles/phase0a_*.py`,
-  `wiggles/figs/phase0/`, `wiggles/phase0_*.csv`).  The earlier exploratory
-  scripts stay in `wavecal/`.  The SRF JSON goes in `hypernet/data/`.
+- **Paths** (Q&A Setup #1, Q5; moved into the package 2026-09-29): the
+  Phase 0 scripts are the subpackage `hypernet/wiggles/`
+  (`hypernet/wiggles/phase0a_*.py`, `phase0b_*.py`), run as modules from the
+  repository root, e.g. `python -m hypernet.wiggles.phase0a_veit`.  Their
+  committed tables go in `hypernet/wiggles/phase0_*.csv` and figures in
+  `hypernet/wiggles/figs/phase0/`; the path constants (`WIGGLES_DIR`,
+  `FIGDIR`, `DATA_DIR`, `OUT`) live in `hypernet/wiggles/__init__.py`.  The
+  earlier exploratory scripts stay in top-level `wavecal/`.  The SRF JSON
+  goes in `hypernet/data/`.
 - Every `.md` in `docs/` is published.  Gate reports and other unpublished
   material stay out of `docs/`.
 - Ask questions in the Q&A section below; log completed work under `## Logs`.
@@ -148,33 +153,33 @@ goes into the function first.
    to 1e-4, 6 scans in L1A_IRR and L1C, 12 in L1A_RAD (6 Ld + 6 Lu).  Log
    your work.
 
-5. **VEIT fits, with uncertainties.**  `wiggles/phase0a_veit.py`: fit E from
+5. **VEIT fits, with uncertainties.**  `hypernet/wiggles/phase0a_veit.py`: fit E from
    the mean L1A_IRR and L from the mean Ld and Lu separately, then fit
    FWHM(λ) per channel.  Write the line table to
    `$OS_COLOR/hypernet/wiggles/phase0/veit_lines.parquet`, a committed copy to
-   `wiggles/phase0_veit_lines.csv`, the three `SRFModel`s to
+   `hypernet/wiggles/phase0_veit_lines.csv`, the three `SRFModel`s to
    `hypernet/data/veit_srf_model.json` (small, committed -- Phase 1 reads it),
-   and a figure `wiggles/figs/phase0/veit_fwhm_vs_lambda.png` (FWHM points
+   and a figure `hypernet/wiggles/figs/phase0/veit_fwhm_vs_lambda.png` (FWHM points
    with error bars, quadratic fits, E vs Ld vs Lu).  Reproduce the plan §2.3
    table to the quoted precision and note any differences in the Logs.  Log
    your work.
 
 6. **Ld = Lu check and per-scan scatter.**  Extend the script (or add
-   `wiggles/phase0a_scans.py`): fit every scan separately (6 E scans, the Ld
+   `hypernet/wiggles/phase0a_scans.py`): fit every scan separately (6 E scans, the Ld
    and Lu scans), report the scan-to-scan spread of centroid and FWHM per line
    against the `curve_fit` errors, and test Ld = Lu per line (difference over
    combined error).  Line depths in E, Ld and Lu are tabulated as a
    diagnostic only (Ring effect).  Figure
-   `wiggles/figs/phase0/veit_scan_scatter.png`.  Log your work.
+   `hypernet/wiggles/figs/phase0/veit_scan_scatter.png`.  Log your work.
 
-7. **Preliminary H1/H2 budget.**  `wiggles/phase0a_budget_veit.py`: per line,
+7. **Preliminary H1/H2 budget.**  `hypernet/wiggles/phase0a_budget_veit.py`: per line,
    (H1) the residual line amplitude in Ld/Ed produced by linear interpolation
    alone (linear minus cubic on the same Ed, as in `sanity_checks_veit.py`) and
    (H2) the residual predicted from the FWHM difference,
    depth × (FWHM_L² − FWHM_E²)/FWHM², against the measured residual line
    amplitude in Ld/Ed and the ρw'' power within ±5 nm of the line.  Write
-   `wiggles/phase0_veit_budget.csv` and
-   `wiggles/figs/phase0/veit_budget.png`.  This script is the template for
+   `hypernet/wiggles/phase0_veit_budget.csv` and
+   `hypernet/wiggles/figs/phase0/veit_budget.png`.  This script is the template for
    task 12.  Log your work.
 
 8. **0a interim report.**  In Q&A, summarise: the FWHM(λ) coefficients and
@@ -186,15 +191,15 @@ goes into the function first.
 
 9. **Ingest and index.**  Mirror the delivery with `rclone` to a subfolder of
    `$OS_COLOR/WATERHYPERNET/Wavelengths/` (name per the delivery).
-   `wiggles/phase0b_index.py`: match every L1A/L1C/L2A file to a row of
+   `hypernet/wiggles/phase0b_index.py`: match every L1A/L1C/L2A file to a row of
    `docs/wiggles_data_request.csv` by site, `sequence_time` and azimuth,
    carry `instrument`, `sza`, `sky` and the cal period, record which
    requested sequences are missing and which spares were substituted, and
    check the `instrument_calibration_file_rad` attribute bug.  Write
    `$OS_COLOR/hypernet/wiggles/phase0/request_index.parquet` and a committed
-   summary `wiggles/phase0_delivery_summary.csv`.  Log your work.
+   summary `hypernet/wiggles/phase0_delivery_summary.csv`.  Log your work.
 
-10. **Batch line fits.**  `wiggles/phase0b_fit_all.py`: `fit_lines` on the
+10. **Batch line fits.**  `hypernet/wiggles/phase0b_fit_all.py`: `fit_lines` on the
     mean E, Ld and Lu of every sequence (per scan optional, behind a flag) and
     `fit_fwhm_model` per sequence and channel.  Outputs
     `$OS_COLOR/hypernet/wiggles/phase0/line_fits.parquet` and
@@ -202,21 +207,21 @@ goes into the function first.
     Add a Tier-2 test that one delivered sequence fits without error.  Log
     your work.
 
-11. **Stability.**  `wiggles/phase0b_stability.py`: FWHM(λ) at 400, 500, 600,
+11. **Stability.**  `hypernet/wiggles/phase0b_stability.py`: FWHM(λ) at 400, 500, 600,
     700 nm and the centroid offset (L − E) versus SZA, `sky`, month and time,
     per instrument; the spread per instrument against the 0.2 nm criterion;
     122304 and 121222 before/after recalibration; 122302 at BEFR vs THFR
     (site vs instrument); the two-instruments-one-site pairs at VEIT, GAIT and
-    MAFR.  Figures under `wiggles/figs/phase0/` and a committed table
-    `wiggles/phase0_stability.csv`.  Log your work.
+    MAFR.  Figures under `hypernet/wiggles/figs/phase0/` and a committed table
+    `hypernet/wiggles/phase0_stability.csv`.  Log your work.
 
 12. **H1/H2 error budget per sequence.**  Generalise task 7 into
-    `wiggles/phase0b_budget.py` over the whole index: per sequence and line,
+    `hypernet/wiggles/phase0b_budget.py` over the whole index: per sequence and line,
     the H1 and H2 contributions versus the measured ρw'' excess at the line;
     summarise by instrument and water type.  Table and figure as above.  Log
     your work.
 
-13. **Calibration files and lab data.**  `wiggles/phase0b_calfiles.py`: open
+13. **Calibration files and lab data.**  `hypernet/wiggles/phase0b_calfiles.py`: open
     each `HYPERNETS_CAL_HYPSTAR_*_{RAD,IRR}_v2.3.nc`, list the variables and
     attributes (wavelength coefficients, `bandwidth`, anything SRF-like), and
     compare with the fitted centroids and FWHM(λ); read any lab line-spread
@@ -571,6 +576,48 @@ additive-light effects.
 *Default: Ld is the reference L channel for the SRF (tasks 10-11 and
 Phase 2), Lu is carried as a check, and the gate compares E with Ld.*
 >A. Follow your default.
+
+### Build #3b -- 2026-09-29 (Opus 5.5): update to the interim report
+
+The HSRS template fit (task 3b) supersedes items 1, 3 and 4 of the Build #8
+report.  Item 2 stands, and is now stronger.  Everything comes from
+`wiggles/phase0a_template_veit.py`.
+
+- **SRF handed to Phase 1** (`hypernet/data/veit_srf_model.json`, template
+  fit, veil 0).
+
+  | | 400 | 500 | 600 | 700 | 850 nm |
+  |---|---:|---:|---:|---:|---:|
+  | E | 2.35 | 2.23 | 2.21 | 2.28 | 2.55 |
+  | Ld | 2.88 | 2.74 | 2.64 | 2.58 | 2.57 |
+  | Lu | 2.92 | 2.73 | 2.63 | 2.62 | 2.76 |
+
+  - Errors are ± 0.04-0.15 nm, with the covariance inflated by χ²_ν = 12-21.
+  - The windows are 27 × 10 nm over 390-880 nm, with the telluric bands
+    excluded, so the curves are **constrained over 390-680 and 850-870 nm
+    only**.
+  - The empirical line widths were 0.3-0.5 nm too wide: E was 2.7-2.8 nm.
+- **E ≠ L, now without the blend caveat.**  Ld − E is 0.53 ± 0.04 nm at
+  400 nm, 0.50 ± 0.06 at 500, 0.42 ± 0.08 at 600, 0.30 ± 0.09 at 700 and
+  0.02 ± 0.15 at 850 nm.  16 of 27 windows are individually at z > 3.
+- **Centroid offsets.**
+  - Relative Ld − E: +0.045 ± 0.011 nm, which confirms the empirical +0.050.
+  - Absolute, as robust medians over the windows:
+    - E: −0.02 nm against air, −0.16 against vacuum;
+    - Ld: +0.09 / −0.09;
+    - Lu: +0.06 / −0.08.
+
+    **E points to an air-scale calibration**, and on the air scale every
+    channel is within 0.1 nm.  The L channels can't tell air from vacuum.
+    Kevin's answer still settles it.
+- **Gaussian shape.**
+  - The additive veil (Ring filling-in or stray light) is zero within
+    errors, at −0.03 ± 0.05 in every channel.
+  - The per-window χ²_ν is 2.5-4.3.  That is not a perfect fit, but most of
+    the misfit sits in windows near weak telluric lines (580-600 and
+    660-680 nm).
+  - A direct test of the SRF shape (e.g. a Gaussian + Lorentzian SRF) is a
+    possible extension, not yet done.
 
 ## Logs
 
@@ -986,3 +1033,165 @@ Phase 2), Lu is carried as a check, and the gate compares E with Ld.*
 - Added Q10 (task 3b before Phase 1) and Q11 (Ld as the reference L
   channel), both with defaults.
 - `pytest -q`: 43 passed.
+
+### 2026-09-29 -- Build #3b and the 0b scripts (Opus 5.5)
+
+- JXP accepted the Q10 and Q11 defaults: task 3b first, with the template
+  models in `veit_srf_model.json` and the empirical ones in
+  `veit_srf_model_empirical.json`; Ld is the reference L channel.  JXP has
+  sent the data request to Kevin, and
+  `correspondence/wiggles_note_to_kevin.md` is now marked "sent".
+- **HSRS.**
+  - URL: `https://lasp.colorado.edu/lisird/resources/lasp/hsrs/v2/hybrid_reference_spectrum_p005nm_resolution_c2022-11-30_with_unc.nc`
+    (TSIS-1 HSRS v2, created 2022-11-30).
+  - SHA-256: `dd9f62fb9b39433631013ebf052429f4daddb2bd7e0d970a6d292be6026f3e20`.
+  - The file is 60.7 MB and is stored at `$OS_COLOR/hypernet/ref/`.
+  - It covers 202-2730 nm at 0.005 nm resolution, sampled every 0.001 nm,
+    in W m⁻² nm⁻¹, on **vacuum** wavelengths (variable `Vacuum
+    Wavelength`).
+  - The p01nm/p025nm variants at the same path 302 or 200 as well; only
+    p005nm was fetched.
+- **New `hypernet/refspec.py`:** `fetch_hsrs(force, verify)` with a
+  checksum check, `hsrs_available()`, and `load_hsrs(wmin, wmax, step=5,
+  frame='vac'|'air')`, which block-averages to 0.005 nm by default.
+- **`hypernet/srf.py` additions:**
+  - `vac_to_air()`, the fixed-point inverse of `air_to_vac`;
+  - `convolve_gaussian()`, a direct weighted mean over ±6σ;
+  - `fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err, veil)`,
+    with model (c₀ + c₁x)·(R_σ(λ − dlam) + veil·⟨R_σ⟩).  Here `dlam` is
+    measured − reference (the sign of `dmu`).  Bounds are σ 0.15-3.5 nm,
+    |dlam| < 1 nm and veil −0.3 to 0.9; a parameter at a bound means
+    failure, and the function never raises;
+  - `template_windows()` and `TELLURIC`, the exclusion bands;
+  - `fit_template_windows()`, which returns a table shaped for
+    `SRFModel.from_lines`.
+- **Telluric exclusions** are 570-580 (O2-O2 at 577), 626-634, 640-650,
+  685-750, 757-773, 780-845 and > 870 nm.  They were widened after the first
+  VEIT run, whose windows at 575, 645, 745, 795 and 875 nm gave offsets of
+  −0.5 to −1 nm and one FWHM of 5.6 nm.
+- **New `hypernet/whn_srf.py`:**
+  - `fit_sequence(irr, rad, ref, template, empirical, veil, per_scan)`
+    returns the empirical and template tables and six `SRFModel`s;
+  - `fit_files()`;
+  - `models_table()`, one row per model: coefficients, errors, the
+    flattened covariance, and FWHM at 400/450/500/600/700/850 nm;
+  - `load_reference()`.
+- **New `wiggles/phase0a_template_veit.py` (task 3b):**
+  - Fits the 10 nm template windows with the veil free and fixed.
+  - Writes `veit_template.parquet`, `wiggles/phase0_veit_template.csv`,
+    `hypernet/data/veit_srf_model.json` (template, veil 0 for all channels)
+    and `wiggles/figs/phase0/veit_template_fwhm.png`.
+  - The veil comes out at −0.03 ± 0.05 and freeing it makes about a third of
+    the windows fail, so it is shipped fixed at 0.
+  - Results are in the Build #3b Q&A.  `phase0a_veit.py` now writes
+    `veit_srf_model_empirical.json`, and `phase0a_interim.py` reads it.
+- **The 0b scripts, all run on the VEIT sequence:**
+  - `wiggles/phase0b_index.py` (task 9) uses the new
+    `whn_l1a.sequence_table()` and `match_request()`.
+    - It matches by site code, `sequence_time` and azimuth, and reads the
+      L1A attributes for the instrument, cal-date and cal-attribute-bug
+      checks.
+    - It counts primaries and spares per request row, and substitutions of
+      spares for missing primaries.
+    - It writes `request_index.parquet` and
+      `wiggles/phase0_delivery_summary.csv`.
+    - On VEIT: 224 missing, 1 extra (the sample is not in the request), and
+      the attribute bug is detected.
+  - `wiggles/phase0b_fit_all.py` (task 10):
+    - loops over `whn_srf.fit_files`, with template veil 0 and flags
+      `--per-scan`, `--no-template` and `--limit`;
+    - keeps going past failures, recorded in `fit_status.csv`;
+    - writes `line_fits`, `template_fits`, `srf_models` and `scan_fits`
+      `.parquet`;
+    - takes 1 s per sequence and reproduces the VEIT numbers.
+  - `wiggles/phase0b_stability.py` (task 11):
+    - per instrument × cal period × channel, the mean, std and range of FWHM
+      at 400-700 nm against the 0.2 nm criterion, plus the Ld − E width and
+      offset;
+    - slopes against SZA, season (cos of month) and year, and means by sky
+      class;
+    - the plan's pairs, with 122304 vs 122305 at VEIT split by 122304's
+      calibration period, since 122305 ran between them;
+    - writes three CSVs and `stability_vs_{sza,time}.png`.
+    - A synthetic 30-sequence smoke test (scratch, not committed) recovered
+      an injected 0.3 nm recalibration jump as 0.28 nm (12σ) and a null
+      site pair as z = −0.5.
+    - On VEIT alone: one group, no pairs.
+  - `wiggles/phase0b_budget.py` (task 12):
+    - loops `phase0a_budget_veit.budget()` over sequences with L1A + L2A,
+      using the E and Ld empirical fits from `line_fits.parquet`;
+    - adds a ρw'' excess, over the 25th percentile of rms ρw'' in 10 nm
+      tiles over 400-700 nm (the median tile is not line-free);
+    - summarises by instrument and water type;
+    - writes `budget_lines.parquet`, `wiggles/phase0_budget{,_summary}.csv`
+      and `budget_all.png`.
+    - On VEIT it reproduces task 7 (α₂ = 0.93 in Ld/Ed, 1.08 in ρw).  The
+      ρw'' excess is 8.3× at Ca H/K, 5.1× at the G band, 2.6-3.2× at Hβ and
+      Mg b, and 0.6-1.2× in the red.
+  - `wiggles/phase0b_calfiles.py` (task 13):
+    - finds `HYPERNETS_CAL_HYPSTAR_*_{RAD,IRR}_v*.nc` and any
+      line-spread-like files;
+    - lists every variable and attribute and flags the SRF-like ones;
+    - compares the cal wavelengths with the L1A grids, and
+      `bandwidth`/`fwhm` with the fitted template FWHM.
+    - No cal files are present yet, so it says so and exits.  A smoke test
+      on an L1A file as stand-in found `bandwidth` and `wavelength` and
+      compared 3.0 nm against the fitted E 2.2-2.6 nm.
+- **Tests.**
+  - `test_srf.py` gained 8: vac↔air inversion, window tiling, template
+    recovery of σ / dlam / veil (parametrised), graceful failure, template →
+    `SRFModel`, and HSRS recovery (Tier 2).
+  - `test_whn_l1a.py` gained a synthetic test of `sequence_table` and
+    `match_request`.
+  - New `test_whn_srf.py`, Tier 2: the HSRS checksum, and the Hα minimum at
+    656.46 nm (vacuum) and 656.28 nm (air); plus `fit_sequence` on VEIT,
+    which stands in for task 10's delivered-sequence test.
+  - `pytest -q`: **53 passed**.
+- Updated `wiggles_phase1_prompts.md` Context: HSRS already fetched via
+  `hypernet/refspec.py`; the JSON now holds template SRFs with its valid
+  range; the module names; Ld as the L reference.
+- A slip to report: I ran `git mv -n` (a dry run) while checking a rename.
+  It changed nothing (`git status` confirmed it), but it should not have
+  been run.
+- Still waiting on the delivery: running tasks 9-13 for real, and the gate
+  (task 14).
+
+### 2026-09-29 -- Moved `wiggles/` into the package (Opus 5.5)
+
+- At JXP's request, the top-level `wiggles/` directory is now the subpackage
+  `hypernet/wiggles/`, so it installs with the repository (`find_packages()`
+  picks it up).  I moved it with plain `mv`; JXP runs git, and `git add -A`
+  should record renames.
+- New `hypernet/wiggles/__init__.py` holds the path constants: `WIGGLES_DIR`
+  (committed CSVs), `FIGDIR` (`figs/phase0/`), `DATA_DIR` (`hypernet/data/`),
+  `REPO` and `OUT` (`$OS_COLOR/hypernet/wiggles/phase0`, falling back to
+  `.` when `$OS_COLOR` is unset).
+- The scripts:
+  - The `sys.path` hacks are gone.  Sibling imports are now
+    `from hypernet.wiggles import phase0a_veit as p5`, and so on.
+  - They run as modules: `python -m hypernet.wiggles.<script>`.
+  - `phase0a_l1c_consistency` and `phase0a_interim` were flat scripts; they
+    are now wrapped in `main()`, so nothing runs at import.
+  - `phase0a_l1c_consistency` resolves its data directory through
+    `whn_l1a.wavelengths_root()`.
+- Paths updated:
+  - the docstrings in `srf.py`, `whn_l1a.py`, `whn_srf.py` and
+    `test_whn_l1a.py`;
+  - one path in the `docs/wiggles_planning.md` §2.3 correction note;
+  - everything above `## Q&A` in this doc, including a new Paths
+    convention.
+  - The Q&A and Logs keep their original `wiggles/...` paths as a
+    historical record; read them as `hypernet/wiggles/...`.
+  - `CLAUDE.md` layout now lists `srf.py`, `whn_l1a.py`, `whn_srf.py`,
+    `refspec.py`, `data/` and `wiggles/`.
+- Verification:
+  - I re-ran all 11 scripts through `python -m`.  The three CSVs tracked at
+    HEAD (`phase0_veit_{lines,scans,budget}.csv`) are byte-identical.
+  - The JSON `script` provenance now reads `hypernet/wiggles/...`.
+  - No top-level `wiggles/` is recreated.
+- New tests in `test_import.py`: every `hypernet.wiggles` module imports and
+  has `main()`, including in a subprocess with `$OS_COLOR` unset.
+  `pytest -q`: **55 passed**.
+- Note: the committed CSVs and PNGs sit inside the package directory, but
+  `package_data` ships only `data/*.json`, so a non-editable install carries
+  the code, not the figures and tables.

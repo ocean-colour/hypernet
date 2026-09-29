@@ -15,27 +15,23 @@ inflated by chi2_nu when > 1).
 Outputs:
 
 - ``$OS_COLOR/hypernet/wiggles/phase0/veit_lines.parquet`` and the committed
-  copy ``wiggles/phase0_veit_lines.csv``;
-- ``hypernet/data/veit_srf_model.json`` (E, Ld, Lu; the empirical models --
+  copy ``hypernet/wiggles/phase0_veit_lines.csv``;
+- ``hypernet/data/veit_srf_model_empirical.json`` (E, Ld, Lu; the empirical models --
   to be superseded by the template fit of task 3b);
-- ``wiggles/figs/phase0/veit_fwhm_vs_lambda.png``;
+- ``hypernet/wiggles/figs/phase0/veit_fwhm_vs_lambda.png``;
 - on stdout, the plan §2.3 table re-derived and compared.
 
-Run from the repository root: ``python wiggles/phase0a_veit.py``.
+Run from the repository root: ``python -m hypernet.wiggles.phase0a_veit``.
 """
 import os
-import sys
 
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from hypernet import srf  # noqa: E402
 from hypernet import whn_l1a as wl  # noqa: E402
+from hypernet.wiggles import DATA_DIR, FIGDIR, OUT, REPO, WIGGLES_DIR  # noqa: F401
 
-REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-OUT = os.path.join(os.environ['OS_COLOR'], 'hypernet', 'wiggles', 'phase0')
-FIGDIR = os.path.join(REPO, 'wiggles', 'figs', 'phase0')
 FLATTEN_PX = 20
 
 # The plan §2.3 table as printed.  Its "Ld" column came from the vza < 90
@@ -238,17 +234,17 @@ def main():
                 method='empirical Gaussian line fits (srf.fit_lines); '
                        'to be superseded by the HSRS template fit (task 3b)',
                 errors='scan_errors flatten_px=%d' % FLATTEN_PX,
-                script='wiggles/phase0a_veit.py')
+                script='hypernet/wiggles/phase0a_veit.py')
     lines = fit_all(chans)
     lines.to_parquet(os.path.join(OUT, 'veit_lines.parquet'))
     csv_cols = ['channel', 'err_kind', 'name', 'lam_air', 'lam_vac', 'group',
                 'blend', 'use_for_srf', 'ok', 'npix', 'mu', 'mu_err', 'dmu',
                 'sigma', 'sigma_err', 'fwhm', 'fwhm_err', 'depth', 'depth_err',
                 'c0', 'c1', 'chi2_nu']
-    lines[csv_cols].to_csv(os.path.join(REPO, 'wiggles', 'phase0_veit_lines.csv'),
+    lines[csv_cols].to_csv(os.path.join(WIGGLES_DIR, 'phase0_veit_lines.csv'),
                            index=False, float_format='%.7g')
     mods = models(lines, meta)
-    srf.save_srf_models(os.path.join(REPO, 'hypernet', 'data', 'veit_srf_model.json'),
+    srf.save_srf_models(os.path.join(DATA_DIR, 'veit_srf_model_empirical.json'),
                         mods, meta=meta)
     print('\nSRF models (FWHM = c0 + c1 x + c2 x², x = (λ - 600)/100 nm):')
     for m in mods:
@@ -268,8 +264,8 @@ def main():
     compare_plan(lines)
     absolute_offsets(lines)
     figure(lines, mods, os.path.join(FIGDIR, 'veit_fwhm_vs_lambda.png'))
-    print('\nwrote', OUT, 'veit_lines.parquet; wiggles/phase0_veit_lines.csv; '
-          'hypernet/data/veit_srf_model.json; wiggles/figs/phase0/veit_fwhm_vs_lambda.png')
+    print('\nwrote', OUT, 'veit_lines.parquet; hypernet/wiggles/phase0_veit_lines.csv; '
+          'hypernet/data/veit_srf_model_empirical.json; hypernet/wiggles/figs/phase0/veit_fwhm_vs_lambda.png')
 
 
 if __name__ == '__main__':

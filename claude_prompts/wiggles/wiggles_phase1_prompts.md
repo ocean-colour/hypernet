@@ -65,10 +65,20 @@ refinement rather than a requirement and Phase 2 defaults to eq. (14).
   the tables under `$OS_COLOR/hypernet/wiggles/ref/hitran/`.
 - **Reference spectra to fetch:** TSIS-1 HSRS v2 (LASP; highest native
   resolution), Serdyuchenko et al. 2014 O₃ cross-sections.  Record URLs and
-  checksums in the Logs.
+  checksums in the Logs.  *HSRS is already fetched (Phase 0 task 3b,
+  2026-09-29):* `hypernet/refspec.py` (`fetch_hsrs`, `load_hsrs(wmin, wmax,
+  step, frame='vac'|'air')`, URL and SHA-256 in the module) and the file
+  `$OS_COLOR/hypernet/ref/hybrid_reference_spectrum_p005nm_resolution_c2022-11-30_with_unc.nc`
+  (0.005 nm resolution, 0.001 nm sampling, vacuum wavelengths).  The Emod
+  builder should import it, not download again.
 - **From Phase 0a:** `hypernet/data/veit_srf_model.json` (E, Ld, Lu FWHM(λ)
-  models), the per-scan noise levels (Phase 0 task 6), the module names
-  chosen there.  The real E (1536 px) and L (1538 px) grids come from the
+  models from the HSRS template fit of task 3b: the SRF widths themselves,
+  E ≈ 2.2-2.4 nm, Ld ≈ 2.9 → 2.6 nm over 400-700 nm; valid 390-680 and
+  850-870 nm, unconstrained 680-850 nm; read with `srf.load_srf_models`;
+  the empirical line-width models are in `veit_srf_model_empirical.json`),
+  the per-scan noise levels (Phase 0 task 6), the module names chosen there
+  (`hypernet/srf.py`, `hypernet/whn_l1a.py`, `hypernet/whn_srf.py`,
+  `hypernet/refspec.py`).  Ld is the reference L channel (Phase 0 Q11).  The real E (1536 px) and L (1538 px) grids come from the
   VEIT sample at `$OS_COLOR/WATERHYPERNET/Wavelengths/`; HYPSTAR geometry
   there (vza is measured from nadir): Lu at `viewing_zenith_angle` ≈ 40°
   (water, 40° off nadir), Ld at ≈ 140° (sky, 40° off zenith), SZA 36.7°.
@@ -117,7 +127,7 @@ refinement rather than a requirement and Phase 2 defaults to eq. (14).
    add a `needs_osoaa` skip marker for one live 550 nm run.  Log your work.
 
 4. **Emod builder.**  Module per Q&A (default `hypernet/emod.py`):
-   `fetch_hsrs()` (download once to `ref/`, load), `gas_transmittance(lam,
+   HSRS via `hypernet.refspec.load_hsrs` (already downloaded), `gas_transmittance(lam,
    airmass, pwv_mm, pressure_hpa, temperature_k)` using HAPI `absorptionCoefficient_Voigt`
    for O₂ and H₂O on the 0.01 nm grid 380-1000 nm, `ozone_transmittance(lam,
    airmass, ozone_du)` from Serdyuchenko, and `build_emod(sza, pwv_mm=15,

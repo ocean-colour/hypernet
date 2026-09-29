@@ -1,0 +1,5 @@
+system_id,cal_period,quantity,n,slope_sza,slope_sza_err,slope_season,slope_season_err,slope_year,slope_year_err,mean_sky_untagged
+HYPSTAR_122304,2024-11-08/2024-11-12,fwhm_600_E,1,,,,,,,2.2125
+HYPSTAR_122304,2024-11-08/2024-11-12,fwhm_600_Ld,1,,,,,,,2.6370
+HYPSTAR_122304,2024-11-08/2024-11-12,dfwhm_450_Ld_E,1,,,,,,,0.5216
+HYPSTAR_122304,2024-11-08/2024-11-12,doffset_Ld_E,1,,,,,,,0.0392

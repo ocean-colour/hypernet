@@ -125,7 +125,7 @@ result.**
   first version of this table had the Ld and Lu columns swapped, because
   `viewing_zenith_angle` is measured from nadir (vza < 90 is the water view).
   The headers above are now right; the conclusions are unchanged. A joint
-  Ca H/K fit (`wiggles/phase0a_veit.py`) gives wider Ca H/K widths (E 2.7,
+  Ca H/K fit (`hypernet/wiggles/phase0a_veit.py`) gives wider Ca H/K widths (E 2.7,
   L 3.0–3.4 nm), which shrinks the E–L difference there to 0.25–0.6 nm; the
   other entries reproduce to ≤ 0.05 nm except Hα in Lu (+0.12 nm) and the
   O2-A band (±0.3 nm), whose width depends on the fit weights.

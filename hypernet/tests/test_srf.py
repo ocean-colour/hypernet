@@ -212,3 +212,95 @@ def test_scan_errors_flatten_removes_broadband_scatter():
     np.testing.assert_array_equal(mean, mean_f)
     assert np.median(raw / mean) > 0.02
     assert np.median(flat / mean) == pytest.approx(0.004, rel=0.25)
+
+
+# --- Template (reference-spectrum) fit -----------------------------------------
+
+def _fake_reference(lo=380.0, hi=900.0, seed=11):
+    """A 0.005 nm 'solar' spectrum: many narrow absorption lines on a slope."""
+    rng = np.random.default_rng(seed)
+    w = np.arange(lo, hi, 0.005)
+    f = 1.5 + 0.0005 * (w - 600)
+    for mu in rng.uniform(lo, hi, int(3 * (hi - lo))):
+        a, s = rng.uniform(0.05, 0.8), rng.uniform(0.005, 0.05)
+        f = f * (1 - a * np.exp(-0.5 * ((w - mu) / s) ** 2))
+    return w, f
+
+
+def test_vac_to_air_inverts():
+    lam = np.array([393.366, 656.281, 866.214])
+    np.testing.assert_allclose(srf.vac_to_air(srf.air_to_vac(lam)), lam, atol=1e-9)
+
+
+def test_template_windows_skip_telluric():
+    win = srf.template_windows(390, 880, 10)
+    assert (390.0, 400.0) in win and (850.0, 860.0) in win
+    assert all(not (a < 773 and b > 757) for a, b in win)      # O2-A excluded
+    assert all(b - a == 10 for a, b in win)
+
+
+@pytest.mark.parametrize('veil', [0.0, 0.08])
+def test_template_fit_recovers_sigma_shift_veil(veil):
+    rw, rf = _fake_reference()
+    sig, dl = 1.15, 0.07
+    x = WAV[(WAV > 480) & (WAV < 520)]
+    R = srf.convolve_gaussian(rw, rf, x - dl, sig)
+    m = (x >= 490) & (x <= 500)
+    y = (2.0 + 0.01 * (x - 495)) * (R + veil * R[m].mean())
+    rng = np.random.default_rng(5)
+    e = np.full_like(x, 1e-4 * y.mean())
+    y = y + rng.normal(0, e)
+    r = srf.fit_srf_template(x, y, rw, rf, 490.0, 500.0, err=e, veil=True)
+    assert r['ok']
+    for k, v in (('sigma', sig), ('dlam', dl), ('veil', veil)):
+        assert abs(r[k] - v) < max(4 * r[k + '_err'], 0.005), k
+    assert r['sigma'] == pytest.approx(sig, abs=0.02)
+    assert 0.3 < r['chi2_nu'] < 2.5
+
+
+def test_template_fit_fails_gracefully():
+    rw, rf = _fake_reference(450, 550)
+    r = srf.fit_srf_template(WAV, np.ones_like(WAV), rw, rf, 800.0, 810.0)
+    assert not r['ok'] and np.isnan(r['sigma'])            # reference does not cover
+
+
+def test_template_table_feeds_srfmodel():
+    rw, rf = _fake_reference()
+    x = WAV[(WAV > 385) & (WAV < 895)]
+    true = np.array([2.7, 0.1, -0.05])
+    fw = lambda l: true[0] + true[1] * (l - 600) / 100 + true[2] * ((l - 600) / 100) ** 2  # noqa
+    wins = srf.template_windows(400, 880, 20)
+    y = np.full_like(x, np.nan)
+    for a, b in wins:  # build each window with its own sigma
+        mm = (x >= a) & (x <= b)
+        y[mm] = srf.convolve_gaussian(rw, rf, x[mm] - 0.03,
+                                      fw(0.5 * (a + b)) / srf.FWHM_PER_SIGMA)
+    e = np.full_like(x, 1e-3)
+    df = srf.fit_template_windows(x, y, rw, rf, windows=wins, err=e, veil=False)
+    assert df['ok'].all()
+    m = srf.SRFModel.from_lines('E', df)
+    np.testing.assert_allclose(m.coeffs, true, atol=0.02)
+    assert m.offset == pytest.approx(0.03, abs=0.005)
+
+
+def _hsrs_ok():
+    try:
+        from hypernet import refspec
+        return refspec.hsrs_available()
+    except Exception:
+        return False
+
+
+@pytest.mark.skipif(not _hsrs_ok(), reason='requires the TSIS-1 HSRS file in $OS_COLOR/hypernet/ref')
+def test_template_fit_on_hsrs():
+    from hypernet import refspec
+    rw, rf = refspec.load_hsrs(410, 455, frame='air')
+    assert rw.size > 5000 and np.all(np.diff(rw) > 0)
+    sig, dl = 1.2, -0.05
+    x = WAV[(WAV > 425) & (WAV < 445)]
+    y = 1.3 * srf.convolve_gaussian(rw, rf, x - dl, sig)
+    e = 1e-3 * y
+    r = srf.fit_srf_template(x, y, rw, rf, 426.0, 436.0, err=e)
+    assert r['ok']
+    assert r['sigma'] == pytest.approx(sig, abs=0.01)
+    assert r['dlam'] == pytest.approx(dl, abs=0.01)

@@ -1,0 +1,2 @@
+site_code,sequence_time,system_id,cal_period,water_type,sza_l1a,sky,n_lines,rho2_baseline,rho2_excess_median,h2_over_h1_median,rho_meas_over_pred_H2_median,alpha2_LdEd,alpha2_LdEd_err,alpha1_LdEd,alpha1_LdEd_err,alpha2_LuEd,alpha2_LuEd_err,alpha1_LuEd,alpha1_LuEd_err,alpha2_rho,alpha2_rho_err,alpha1_rho,alpha1_rho_err
+VEIT,20260604T0845,HYPSTAR_122304,2024-11-08/2024-11-12,clear,36.67,,8,9.4636e-05,1.8338,8.9646,1.8094,0.93427,0.060812,-3.7061,0.32859,1.008,0.066533,-7.2102,0.48769,1.0831,0.13482,-10.222,1.344

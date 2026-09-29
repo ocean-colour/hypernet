@@ -1,7 +1,7 @@
 # Note to Kevin Ruddick: spectral wiggles, first look and plan
 
 **From:** J. Xavier Prochaska (UC Santa Cruz) · **Date:** 28 September 2026 ·
-**Status:** draft, not sent
+**Status:** sent by JXP (confirmed 2026-09-29)
 
 **Attach:** `docs/wiggles_planning.md` (or its rendered page) and
 `docs/wiggles_data_request.csv`

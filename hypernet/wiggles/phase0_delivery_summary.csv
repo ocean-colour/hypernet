@@ -1,0 +1,12 @@
+row,site,instrument,optional,n_primary,n_primary_delivered,n_spare,n_spare_delivered,n_spare_substituted,n_usable,n_complete,n_instrument_mismatch,n_cal_mismatch,n_azimuth_mismatch,n_cal_attr_bug,n_sky_tagged
+BEFR 122302,BEFR_H,HYPSTAR_122302,False,20.0,0,10.0,0.0,0.0,0.0,0,0.0,0.0,0.0,0,0.0
+GAIT 120242,GAIT_H,HYPSTAR_120242,True,6.0,0,3.0,0.0,0.0,0.0,0,0.0,0.0,0.0,0,0.0
+GAIT 121222 post-recal,GAIT_H,HYPSTAR_121222,True,7.0,0,3.0,0.0,0.0,0.0,0,0.0,0.0,0.0,0,0.0
+GAIT 121222 pre-recal,GAIT_H,HYPSTAR_121222,True,7.0,0,3.0,0.0,0.0,0.0,0,0.0,0.0,0.0,0,0.0
+MAFR 121231,MAFR_H,HYPSTAR_121231,False,22.0,0,11.0,0.0,0.0,0.0,0,0.0,0.0,0.0,0,0.0
+MAFR 122303,MAFR_H,HYPSTAR_122303,False,8.0,0,4.0,0.0,0.0,0.0,0,0.0,0.0,0.0,0,0.0
+THFR 122302,THFR_H,HYPSTAR_122302,False,20.0,0,10.0,0.0,0.0,0.0,0,0.0,0.0,0.0,0,0.0
+VEIT 122304 post-recal,VEIT_H,HYPSTAR_122304,False,20.0,0,10.0,0.0,0.0,0.0,0,0.0,0.0,0.0,0,0.0
+VEIT 122304 pre-recal,VEIT_H,HYPSTAR_122304,False,20.0,0,10.0,0.0,0.0,0.0,0,0.0,0.0,0.0,0,0.0
+VEIT 122305,VEIT_H,HYPSTAR_122305,False,20.0,0,10.0,0.0,0.0,0.0,0,0.0,0.0,0.0,0,0.0
+(unrequested),VEIT,HYPSTAR_122304,,,1,,,,,1,,,,1,

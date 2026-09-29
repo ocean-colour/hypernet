@@ -5,7 +5,7 @@ irradiance (E) and radiance (L) on their own wavelength grids, come from RBINS
 on request and are mirrored to ``$OS_COLOR/WATERHYPERNET/Wavelengths``.
 
 Conventions established on the VEIT sample (SEQ20260604T084543;
-``wavecal/check_vza_convention_veit.py``, ``wiggles/phase0a_l1c_consistency.py``):
+``wavecal/check_vza_convention_veit.py``, ``hypernet/wiggles/phase0a_l1c_consistency.py``):
 
 - ``viewing_zenith_angle`` is measured from **nadir**: the irradiance sensor
   looks up at 180 deg.  In L1A_RAD, scans with vza < 90 are the water view
@@ -414,3 +414,78 @@ def check_against_l1c(irr, rad, l1c, wmin=400.0, wmax=900.0):
     return dict(E=maxrel(E_L[:, None], l1c['irradiance']),
                 Lu=maxrel(Lu, l1c['upwelling_radiance']),
                 Ld=maxrel(rad['Ld']['at_lu_time'][:, None], l1c['downwelling_radiance']))
+
+
+def sequence_table(products):
+    """One row per delivered sequence (site, seq_time), with a path column per
+    product and the L1C/L2A azimuth.
+
+    Parameters
+    ----------
+    products : pandas.DataFrame
+        Output of :func:`find_products`.
+
+    Returns
+    -------
+    pandas.DataFrame
+        ``site, seq_time, azimuth, n_products, complete`` and one column per
+        product in :data:`PRODUCTS` (path or None).  A product delivered more
+        than once for a sequence keeps the latest ``proc_time``, and the count
+        of duplicates goes in ``n_duplicates``.
+    """
+    rows = []
+    for (site, t), g in products.groupby(['site', 'seq_time']):
+        row = dict(site=site, seq_time=t, n_duplicates=0)
+        az = g['azimuth'].dropna().unique()
+        row['azimuth'] = az[0] if len(az) == 1 else (','.join(sorted(az)) if len(az) else None)
+        for prod in PRODUCTS:
+            h = g[g['product'] == prod].sort_values('proc_time')
+            row[prod] = h['path'].iloc[-1] if len(h) else None
+            row['n_duplicates'] += max(len(h) - 1, 0)
+        row['n_products'] = sum(row[p] is not None for p in PRODUCTS)
+        row['complete'] = row['n_products'] == len(PRODUCTS)
+        rows.append(row)
+    cols = ['site', 'seq_time', 'azimuth', 'n_products', 'complete', 'n_duplicates'] + \
+        list(PRODUCTS)
+    return pd.DataFrame(rows, columns=cols)
+
+
+def match_request(sequences, request):
+    """Match delivered sequences to the rows of the data request.
+
+    The request (``docs/wiggles_data_request.csv``) names a sequence by
+    ``site`` (``'VEIT_H'``), ``sequence_time`` (``'20260604T0845'``) and
+    ``azimuth`` (``'090'``); product filenames drop the ``_H`` suffix, and
+    only L1C/L2A carry the azimuth.
+
+    Parameters
+    ----------
+    sequences : pandas.DataFrame
+        Output of :func:`sequence_table`.
+    request : pandas.DataFrame
+        The request table, read with ``dtype=str``.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per requested sequence plus one per unrequested delivered
+        sequence.  ``status`` is ``'delivered'``, ``'missing'`` or ``'extra'``;
+        ``azimuth_ok`` compares the requested and delivered azimuths (None
+        when either is unknown); the request columns are carried over.
+    """
+    req = request.copy()
+    req['site_code'] = req['site'].str.replace(r'_[HP]$', '', regex=True)
+    seq = sequences.rename(columns={'site': 'site_code', 'seq_time': 'sequence_time',
+                                    'azimuth': 'azimuth_delivered'})
+    m = req.merge(seq, on=['site_code', 'sequence_time'], how='outer', indicator=True)
+    m['status'] = m['_merge'].map({'both': 'delivered', 'left_only': 'missing',
+                                   'right_only': 'extra'}).astype(str)
+    m = m.drop(columns='_merge')
+
+    def _az(r):
+        a, b = r.get('azimuth'), r.get('azimuth_delivered')
+        if not isinstance(a, str) or not isinstance(b, str):
+            return None
+        return a in b.split(',')
+    m['azimuth_ok'] = m.apply(_az, axis=1)
+    return m

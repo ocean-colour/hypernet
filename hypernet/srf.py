@@ -53,6 +53,24 @@ def air_to_vac(lam_air):
     return lam_air * n
 
 
+def vac_to_air(lam_vac):
+    """Convert vacuum wavelengths (nm) to air (nm): the inverse of
+    :func:`air_to_vac`, by fixed-point iteration (converges to < 1e-9 nm in
+    three steps).
+
+    Args:
+        lam_vac (float or array): vacuum wavelength(s) in nm.
+
+    Returns:
+        float or np.ndarray: air wavelength(s) in nm.
+    """
+    lam_vac = np.asarray(lam_vac, dtype=float)
+    lam = lam_vac.copy()
+    for _ in range(4):
+        lam = lam - (air_to_vac(lam) - lam_vac)
+    return lam
+
+
 # The line list.  Columns:
 #   name        -- label
 #   lam_air     -- laboratory (or nominal band) wavelength in air, nm
@@ -126,7 +144,7 @@ def scan_errors(scans, axis=1, flatten_px=None):
 
     The raw scatter is dominated by broadband changes between scans (in the
     VEIT sample 5-6 % in Lu and Ld against 0.4-0.8 % pixel noise; see
-    ``wiggles/phase0a_l1c_consistency.py``).  With ``flatten_px`` the scatter
+    ``hypernet/wiggles/phase0a_l1c_consistency.py``).  With ``flatten_px`` the scatter
     is taken from :func:`flatten_scans` instead, which is the right noise for
     a line fit on a free continuum.  The mean is always that of the raw scans.
 
@@ -542,3 +560,184 @@ def load_srf_models(path):
     with open(path) as fh:
         doc = json.load(fh)
     return {k: SRFModel.from_dict(v) for k, v in doc['models'].items()}
+
+
+# --- Template (reference-spectrum) SRF fit -------------------------------------
+
+#: Telluric bands excluded from the template tiling (nm, air): O2-O2 (577 nm)
+#: with weak H2O, O2-gamma, the weak 640-650 nm H2O band, O2-B with the
+#: 690-750 nm H2O bands, O2-A, the 780-845 nm H2O band, and H2O longward of
+#: 870 nm.  HSRS is a top-of-atmosphere spectrum, so telluric absorption
+#: would otherwise be read as SRF.  The edges were widened after the first
+#: VEIT run, where windows at 575, 645, 745, 795 and 875 nm gave offsets of
+#: -0.5 to -1 nm (hypernet/wiggles/phase0a_template_veit.py; Logs, 2026-09-29).
+TELLURIC = ((570.0, 580.0), (626.0, 634.0), (640.0, 650.0), (685.0, 750.0),
+            (757.0, 773.0), (780.0, 845.0), (870.0, 2000.0))
+
+
+def template_windows(lo=390.0, hi=880.0, width=10.0, exclude=TELLURIC):
+    """Contiguous, non-overlapping windows between ``lo`` and ``hi``, skipping
+    any that touch an ``exclude`` band.
+
+    Returns:
+        list of (lo, hi) tuples, nm.
+    """
+    edges = np.arange(lo, hi + 1e-9, width)
+    out = []
+    for a, b in zip(edges[:-1], edges[1:]):
+        if any(a < eb and b > ea for ea, eb in exclude):
+            continue
+        out.append((float(a), float(b)))
+    return out
+
+
+def convolve_gaussian(ref_wave, ref_flux, wav, sigma):
+    """The reference spectrum seen through a Gaussian SRF of width ``sigma``
+    (nm), evaluated at the pixel centres ``wav``.
+
+    A direct weighted mean over the reference samples within +-6 sigma, so
+    the reference grid may be non-uniform.
+
+    Args:
+        ref_wave, ref_flux (np.ndarray): high-resolution reference, nm and flux.
+        wav (np.ndarray): pixel centres, nm.
+        sigma (float): Gaussian sigma, nm.
+
+    Returns:
+        np.ndarray: the convolved reference at ``wav``.
+    """
+    wav = np.atleast_1d(np.asarray(wav, dtype=float))
+    j0 = np.searchsorted(ref_wave, wav.min() - 6 * sigma)
+    j1 = np.searchsorted(ref_wave, wav.max() + 6 * sigma)
+    rw, rf = ref_wave[j0:j1], ref_flux[j0:j1]
+    dw = np.gradient(rw)
+    g = np.exp(-0.5 * ((wav[:, None] - rw[None, :]) / sigma) ** 2) * dw[None, :]
+    return (g @ rf) / g.sum(axis=1)
+
+
+_TEMPLATE_KEYS = ['lo', 'hi', 'lam_center', 'sigma', 'sigma_err', 'fwhm', 'fwhm_err',
+                  'dlam', 'dlam_err', 'veil', 'veil_err', 'c0', 'c1', 'chi2_nu',
+                  'npix', 'ok']
+
+
+def fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err=None, veil=True,
+                     sigma0=1.2):
+    """Fit a Gaussian SRF by forward-modelling a high-resolution reference.
+
+    Model, for pixels in ``[lo, hi]``::
+
+        spec(x) = (c0 + c1 (x - xc)) * (R_sigma(x - dlam) + veil * <R_sigma>)
+
+    where ``R_sigma`` is the reference convolved with a Gaussian of width
+    ``sigma`` (:func:`convolve_gaussian`), ``<R_sigma>`` its mean over the
+    window, and ``xc`` the window centre.
+
+    - ``dlam`` is measured minus reference wavelength (the sign of ``dmu``
+      in :func:`fit_lines`).
+    - ``veil`` is an additive, line-free fraction of the mean level (Ring
+      filling-in, stray light); fixed at 0 with ``veil=False``.
+
+    Because the reference carries the true line profiles (blends, wings,
+    bands), sigma is the SRF width itself, not the SRF convolved with a line.
+
+    The reference must be on the same wavelength scale (air or vacuum) as the
+    one ``dlam`` is to be measured against.  :func:`hypernet.refspec.load_hsrs`
+    with ``frame='air'`` gives HSRS in air.
+
+    Args:
+        wav, spec (np.ndarray): instrument wavelengths (nm) and spectrum.
+        ref_wave, ref_flux (np.ndarray): the reference, covering at least
+            ``[lo - 8, hi + 8]`` nm.
+        lo, hi (float): window, nm.
+        err (np.ndarray, optional): 1-sigma per-pixel error of ``spec``.
+        veil (bool): fit the additive veil.
+        sigma0 (float): initial sigma, nm.
+
+    Returns:
+        dict: ``lo, hi, lam_center, sigma, sigma_err, fwhm, fwhm_err, dlam,
+        dlam_err, veil, veil_err, c0, c1, chi2_nu, npix, ok``.  NaN with
+        ``ok=False`` on failure; never raises.
+    """
+    wav = np.asarray(wav, dtype=float)
+    spec = np.asarray(spec, dtype=float)
+    m = (wav >= lo) & (wav <= hi) & np.isfinite(spec)
+    if err is not None:
+        err = np.asarray(err, dtype=float)
+        m &= np.isfinite(err) & (err > 0)
+    x, y = wav[m], spec[m]
+    e = err[m] if err is not None else None
+    xc = 0.5 * (lo + hi)
+    out = {k: np.nan for k in _TEMPLATE_KEYS}
+    out.update(lo=lo, hi=hi, lam_center=xc, npix=int(x.size), ok=False)
+    npar = 5 if veil else 4
+    if x.size < npar + 4 or ref_wave[0] > lo - 6 or ref_wave[-1] < hi + 6:
+        return out
+    k0 = np.searchsorted(ref_wave, lo - 8.0)
+    k1 = np.searchsorted(ref_wave, hi + 8.0)
+    rw, rf = ref_wave[k0:k1], ref_flux[k0:k1]
+
+    def f(xx, c0, c1, sig, dl, *v):
+        R = convolve_gaussian(rw, rf, xx - dl, sig)
+        vv = v[0] if v else 0.0
+        return (c0 + c1 * (xx - xc)) * (R + vv * R.mean())
+
+    # linear continuum guess given sigma0
+    R0 = convolve_gaussian(rw, rf, x, sigma0)
+    A = np.column_stack([R0, R0 * (x - xc)])
+    c0, c1 = np.linalg.lstsq(A, y, rcond=None)[0]
+    p0 = [c0, c1, sigma0, 0.0] + ([0.0] if veil else [])
+    lb = [-np.inf, -np.inf, 0.15, -1.0] + ([-0.3] if veil else [])
+    ub = [np.inf, np.inf, 3.5, 1.0] + ([0.9] if veil else [])
+    try:
+        with np.errstate(all='ignore'):
+            p, cov = curve_fit(f, x, y, p0=p0, sigma=e, absolute_sigma=e is not None,
+                               bounds=(lb, ub), max_nfev=4000)
+    except Exception:
+        return out
+    perr = np.sqrt(np.diag(cov)) if np.all(np.isfinite(cov)) else None
+    if perr is None or not np.all(np.isfinite(p)) or not np.all(np.isfinite(perr)):
+        return out
+    # a parameter pinned at a bound is a failed fit
+    at_bound = [abs(p[i] - lb[i]) < 1e-6 * max(1, abs(lb[i])) or
+                abs(p[i] - ub[i]) < 1e-6 * max(1, abs(ub[i]))
+                for i in range(2, npar)]
+    if any(at_bound):
+        return out
+    chi2_nu = np.nan
+    if e is not None:
+        chi2_nu = float(np.sum(((y - f(x, *p)) / e) ** 2) / (x.size - npar))
+    out.update(sigma=p[2], sigma_err=perr[2], fwhm=FWHM_PER_SIGMA * p[2],
+               fwhm_err=FWHM_PER_SIGMA * perr[2], dlam=p[3], dlam_err=perr[3],
+               veil=p[4] if veil else 0.0, veil_err=perr[4] if veil else 0.0,
+               c0=p[0], c1=p[1], chi2_nu=chi2_nu, ok=True)
+    return out
+
+
+def fit_template_windows(wav, spec, ref_wave, ref_flux, windows=None, err=None,
+                         veil=True):
+    """:func:`fit_srf_template` over a list of windows.
+
+    The table is shaped for :meth:`SRFModel.from_lines` (``lam_air`` = window
+    centre, ``dmu`` = ``dlam``, ``mu_err`` = ``dlam_err``, ``blend`` False,
+    ``use_for_srf`` True).
+
+    Args:
+        windows (list of (lo, hi)): default :func:`template_windows`.
+
+    Returns:
+        pd.DataFrame: one row per window.
+    """
+    windows = template_windows() if windows is None else windows
+    rows = []
+    for lo, hi in windows:
+        r = fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err=err, veil=veil)
+        r['name'] = 'T%03.0f-%03.0f' % (lo, hi)
+        rows.append(r)
+    df = pd.DataFrame(rows)
+    df['lam_air'] = df['lam_center']
+    df['dmu'] = df['dlam']
+    df['mu_err'] = df['dlam_err']
+    df['blend'] = False
+    df['use_for_srf'] = True
+    df['ok'] = df['ok'].astype(bool)
+    return df

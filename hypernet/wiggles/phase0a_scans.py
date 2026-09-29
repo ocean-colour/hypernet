@@ -20,22 +20,19 @@ For the VEIT sample:
    continuum placement), not at the SRF.
 
 Outputs: ``$OS_COLOR/hypernet/wiggles/phase0/veit_scan_fits.parquet`` (every
-per-scan fit), ``wiggles/phase0_veit_scans.csv`` (per line and channel
-summary), and ``wiggles/figs/phase0/veit_scan_scatter.png``.
+per-scan fit), ``hypernet/wiggles/phase0_veit_scans.csv`` (per line and channel
+summary), and ``hypernet/wiggles/figs/phase0/veit_scan_scatter.png``.
 
-Run from the repository root: ``python wiggles/phase0a_scans.py``.
+Run from the repository root: ``python -m hypernet.wiggles.phase0a_scans``.
 """
 import os
-import sys
 
 import numpy as np
 import pandas as pd
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, '..'))
-sys.path.insert(0, HERE)
 from hypernet import srf  # noqa: E402
-import phase0a_veit as p5  # noqa: E402  (load(), paths, colours)
+from hypernet.wiggles import phase0a_veit as p5  # noqa: E402  (load(), colours)
+from hypernet.wiggles import DATA_DIR, FIGDIR, OUT, REPO, WIGGLES_DIR  # noqa: F401
 
 CHANNELS = ('E', 'Ld', 'Lu')
 
@@ -211,9 +208,9 @@ def main():
     lines = p5.fit_all(chans)
     mean_fits = lines[lines['err_kind'] == 'flat']
     scans = per_scan_fits(chans, rad)
-    scans.to_parquet(os.path.join(p5.OUT, 'veit_scan_fits.parquet'))
+    scans.to_parquet(os.path.join(OUT, 'veit_scan_fits.parquet'))
     summ = scatter_summary(scans, mean_fits)
-    summ.to_csv(os.path.join(p5.REPO, 'wiggles', 'phase0_veit_scans.csv'),
+    summ.to_csv(os.path.join(WIGGLES_DIR, 'phase0_veit_scans.csv'),
                 index=False, float_format='%.7g')
     ff = '%.3f'
     print('\n[1] scan std / median curve_fit error (1 = errors right), and '
@@ -254,9 +251,9 @@ def main():
     print('\n[4] depths and weak-line equivalent widths (diagnostic only):')
     print(dep.to_string(index=False, float_format=ff))
 
-    figure(summ, ldlu, dep, os.path.join(p5.FIGDIR, 'veit_scan_scatter.png'))
-    print('\nwrote veit_scan_fits.parquet, wiggles/phase0_veit_scans.csv, '
-          'wiggles/figs/phase0/veit_scan_scatter.png')
+    figure(summ, ldlu, dep, os.path.join(FIGDIR, 'veit_scan_scatter.png'))
+    print('\nwrote veit_scan_fits.parquet, hypernet/wiggles/phase0_veit_scans.csv, '
+          'hypernet/wiggles/figs/phase0/veit_scan_scatter.png')
 
 
 if __name__ == '__main__':

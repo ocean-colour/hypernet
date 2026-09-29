@@ -36,27 +36,24 @@ Reported per line:
   L2A std_reflectance / sqrt(n_valid_scans);
 - rms(rho_w'') within +-5 nm.
 
-Outputs: ``wiggles/phase0_veit_budget.csv`` and
-``wiggles/figs/phase0/veit_budget.png``.
+Outputs: ``hypernet/wiggles/phase0_veit_budget.csv`` and
+``hypernet/wiggles/figs/phase0/veit_budget.png``.
 
 This is the template for task 12: :func:`budget` works on any sequence given
 the loaded L1A files, the L2A dict and the task-5-style line fits.
 
-Run from the repository root: ``python wiggles/phase0a_budget_veit.py``.
+Run from the repository root: ``python -m hypernet.wiggles.phase0a_budget_veit``.
 """
 import os
-import sys
 
 import numpy as np
 import pandas as pd
 from scipy.interpolate import CubicSpline
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, '..'))
-sys.path.insert(0, HERE)
 from hypernet import srf  # noqa: E402
 from hypernet import whn_l1a as wl  # noqa: E402
-import phase0a_veit as p5  # noqa: E402
+from hypernet.wiggles import phase0a_veit as p5  # noqa: E402
+from hypernet.wiggles import DATA_DIR, FIGDIR, OUT, REPO, WIGGLES_DIR  # noqa: F401
 
 HALF = 5.0        # nm, the budget window
 EDGE = 2.0        # nm, continuum pixels from HALF to HALF + EDGE
@@ -314,7 +311,7 @@ def main():
     fits_E = f[f['channel'] == 'E'].reset_index(drop=True)
     fits_L = f[f['channel'] == 'Ld'].reset_index(drop=True)
     df, prof = budget(irr, rad, l2a, fits_E, fits_L, return_profiles=True)
-    df.to_csv(os.path.join(p5.REPO, 'wiggles', 'phase0_veit_budget.csv'), index=False,
+    df.to_csv(os.path.join(WIGGLES_DIR, 'phase0_veit_budget.csv'), index=False,
               float_format='%.6g')
     print('\nrms relative residual within +-5 nm (and rho_w\'\' rms, 1/nm^2):')
     print(df[['line', 'rms_meas_LdEd', 'rms_meas_LuEd', 'rms_noise_LdEd', 'rms_H1',
@@ -347,8 +344,8 @@ def main():
     r = clean['rms_H2'] / clean['rms_H1']
     print('  rms_H2 / rms_H1 over the SRF lines: median %.1f, range %.1f-%.1f'
           % (r.median(), r.min(), r.max()))
-    figure(df, prof, os.path.join(p5.FIGDIR, 'veit_budget.png'))
-    print('\nwrote wiggles/phase0_veit_budget.csv, wiggles/figs/phase0/veit_budget.png')
+    figure(df, prof, os.path.join(FIGDIR, 'veit_budget.png'))
+    print('\nwrote hypernet/wiggles/phase0_veit_budget.csv, hypernet/wiggles/figs/phase0/veit_budget.png')
 
 
 if __name__ == '__main__':

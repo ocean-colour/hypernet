@@ -103,7 +103,7 @@ def test_veit_l1c_irradiance_is_linear_interp(veit):
     E_lin = np.interp(w, irr['wave'], irr['mean'])
     rel = np.abs(l1c['irradiance'] - E_lin[:, None]) / E_lin[:, None]
     # 1e-4 where the lines are; the departures grow at low-signal pixels
-    # (grid ends, the 935 nm H2O band; wiggles/phase0a_l1c_consistency.py [8])
+    # (grid ends, the 935 nm H2O band; hypernet/wiggles/phase0a_l1c_consistency.py [8])
     assert np.nanmax(rel[(w > 400) & (w < 900)]) < 1e-4
     assert np.nanmax(rel[(w > 380) & (w < 1000)]) < 1e-3
 
@@ -123,3 +123,28 @@ def test_veit_l2a_matches_l1c(veit):
     band = (l2a['wave'] > 400) & (l2a['wave'] < 700)
     rho = l2a['reflectance'][band, 0]
     assert np.all(np.isfinite(rho)) and 0 < np.median(rho) < 0.1
+
+
+def test_sequence_table_and_match_request():
+    import pandas as pd
+    names = ['HYPERNETS_W_VEIT_L1A_IRR_20260604T0845_20260828T1547_v2.1.nc',
+             'HYPERNETS_W_VEIT_L1A_RAD_20260604T0845_20260828T1547_v2.1.nc',
+             'HYPERNETS_W_VEIT_L1C_ALL_20260604T0845_20260828T1547_090_v2.1.nc',
+             'HYPERNETS_W_VEIT_L2A_REF_20260604T0845_20260828T1547_090_v2.1.nc',
+             'HYPERNETS_W_BEFR_L1A_IRR_20230625T1015_20260901T1000_v2.1.nc',
+             'HYPERNETS_W_BEFR_L2A_REF_20230625T1015_20260901T1000_270_v2.1.nc']
+    prods = pd.DataFrame([dict(path='/x/' + n, **wl.parse_name(n)) for n in names])
+    seqs = wl.sequence_table(prods)
+    assert len(seqs) == 2
+    v = seqs.set_index('site').loc['VEIT']
+    assert v['complete'] and v['azimuth'] == '090' and v['n_products'] == 4
+    req = pd.DataFrame(dict(row=['BEFR 122302', 'BEFR 122302'], priority=['primary', 'spare'],
+                            site=['BEFR_H', 'BEFR_H'], sequence_time=['20230625T1015',
+                                                                      '20230629T1200'],
+                            azimuth=['090', '090'], instrument=['HYPSTAR_122302'] * 2))
+    m = wl.match_request(seqs, req)
+    st = m.set_index('sequence_time')['status'].to_dict()
+    assert st == {'20230625T1015': 'delivered', '20230629T1200': 'missing',
+                  '20260604T0845': 'extra'}
+    befr = m[m['sequence_time'] == '20230625T1015'].iloc[0]
+    assert befr['azimuth_ok'] == False and not befr['complete']  # noqa: E712  (270 != 090)

@@ -1,0 +1,152 @@
+{
+  "meta": {
+    "site": "VEIT",
+    "sequence_id": "SEQ20260604T084543",
+    "system_id": "HYPSTAR_122304",
+    "cal_date_irr": "2024-11-12",
+    "cal_date_rad": "2024-11-08",
+    "method": "empirical Gaussian line fits (srf.fit_lines); to be superseded by the HSRS template fit (task 3b)",
+    "errors": "scan_errors flatten_px=20",
+    "script": "hypernet/wiggles/phase0a_veit.py"
+  },
+  "models": {
+    "E": {
+      "channel": "E",
+      "coeffs": [
+        2.7951319276614246,
+        0.026740091281636347,
+        -0.020689768792098828
+      ],
+      "cov": [
+        [
+          0.015250726368577047,
+          0.002197442439355244,
+          -0.0031111969062271013
+        ],
+        [
+          0.002197442439355243,
+          0.0013673532059614094,
+          -0.0003041916679182627
+        ],
+        [
+          -0.003111196906227101,
+          -0.00030419166791826284,
+          0.0008698082472959469
+        ]
+      ],
+      "offset": 0.14642998768807408,
+      "offset_err": 0.0543534160655278,
+      "lam_min": 393.366,
+      "lam_max": 866.214,
+      "lam_ref": 600.0,
+      "lam_scale": 100.0,
+      "chi2_nu": 25.770319309790505,
+      "npts": 10,
+      "instrument": "HYPSTAR_122304",
+      "frame": "air",
+      "meta": {
+        "site": "VEIT",
+        "sequence_id": "SEQ20260604T084543",
+        "system_id": "HYPSTAR_122304",
+        "cal_date_irr": "2024-11-12",
+        "cal_date_rad": "2024-11-08",
+        "method": "empirical Gaussian line fits (srf.fit_lines); to be superseded by the HSRS template fit (task 3b)",
+        "errors": "scan_errors flatten_px=20",
+        "script": "hypernet/wiggles/phase0a_veit.py",
+        "channel": "E"
+      }
+    },
+    "Ld": {
+      "channel": "Ld",
+      "coeffs": [
+        3.165369560519295,
+        -0.04146665894471657,
+        -0.04390061751900909
+      ],
+      "cov": [
+        [
+          0.011502041967909745,
+          0.0012390529245222166,
+          -0.002326471891684614
+        ],
+        [
+          0.0012390529245222175,
+          0.0015250862671626574,
+          0.00026135573143093384
+        ],
+        [
+          -0.0023264718916846134,
+          0.00026135573143093406,
+          0.0008071936622227522
+        ]
+      ],
+      "offset": 0.1569968289807863,
+      "offset_err": 0.0627904102708143,
+      "lam_min": 393.366,
+      "lam_max": 866.214,
+      "lam_ref": 600.0,
+      "lam_scale": 100.0,
+      "chi2_nu": 13.120012998614508,
+      "npts": 10,
+      "instrument": "HYPSTAR_122304",
+      "frame": "air",
+      "meta": {
+        "site": "VEIT",
+        "sequence_id": "SEQ20260604T084543",
+        "system_id": "HYPSTAR_122304",
+        "cal_date_irr": "2024-11-12",
+        "cal_date_rad": "2024-11-08",
+        "method": "empirical Gaussian line fits (srf.fit_lines); to be superseded by the HSRS template fit (task 3b)",
+        "errors": "scan_errors flatten_px=20",
+        "script": "hypernet/wiggles/phase0a_veit.py",
+        "channel": "Ld"
+      }
+    },
+    "Lu": {
+      "channel": "Lu",
+      "coeffs": [
+        3.2824293764049974,
+        -0.09756887630693933,
+        -0.0794556818020764
+      ],
+      "cov": [
+        [
+          0.01176085317531972,
+          0.002012224835591977,
+          -0.0023361238325273893
+        ],
+        [
+          0.00201222483559198,
+          0.0038190802195549305,
+          0.0009862745910550583
+        ],
+        [
+          -0.002336123832527387,
+          0.0009862745910550592,
+          0.001391389286392321
+        ]
+      ],
+      "offset": 0.1560790876917076,
+      "offset_err": 0.05111603455280418,
+      "lam_min": 393.366,
+      "lam_max": 866.214,
+      "lam_ref": 600.0,
+      "lam_scale": 100.0,
+      "chi2_nu": 5.1168947142232435,
+      "npts": 10,
+      "instrument": "HYPSTAR_122304",
+      "frame": "air",
+      "meta": {
+        "site": "VEIT",
+        "sequence_id": "SEQ20260604T084543",
+        "system_id": "HYPSTAR_122304",
+        "cal_date_irr": "2024-11-12",
+        "cal_date_rad": "2024-11-08",
+        "method": "empirical Gaussian line fits (srf.fit_lines); to be superseded by the HSRS template fit (task 3b)",
+        "errors": "scan_errors flatten_px=20",
+        "script": "hypernet/wiggles/phase0a_veit.py",
+        "channel": "Lu"
+      }
+    }
+  }
+}

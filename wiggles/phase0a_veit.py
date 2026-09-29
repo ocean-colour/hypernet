@@ -246,7 +246,7 @@ def main():
                 'sigma', 'sigma_err', 'fwhm', 'fwhm_err', 'depth', 'depth_err',
                 'c0', 'c1', 'chi2_nu']
     lines[csv_cols].to_csv(os.path.join(REPO, 'wiggles', 'phase0_veit_lines.csv'),
-                           index=False, float_format='%.5g')
+                           index=False, float_format='%.7g')
     mods = models(lines, meta)
     srf.save_srf_models(os.path.join(REPO, 'hypernet', 'data', 'veit_srf_model.json'),
                         mods, meta=meta)

@@ -442,6 +442,136 @@ alongside.*
 >A. Ok, we should avoid overstating the errors for the reasons you mentioned.
 Let's go with your suggestion and we may revisit it later.
 
+### Build #8 -- 2026-09-28 (Opus 5.5): Phase 0a interim report
+
+One sequence: VEIT, 2026-06-04 08:45, HYPSTAR 122304, post-recalibration
+(IRR 2024-11-12, RAD 2024-11-08).  The numbers come from
+`wiggles/phase0a_interim.py`, which reads the committed task 5-7 products.
+The fits use flattened scan-scatter errors (Q9).  Task 6 showed that the scan
+spread matches these errors (median ratio 0.9).
+
+**1. FWHM(λ) handed to Phase 1** (`hypernet/data/veit_srf_model.json`)
+
+The model is FWHM = c₀ + c₁x + c₂x², with x = (λ − 600 nm)/100 nm.  It is fitted
+to 10 lines (Ca H/K, G band, Hβ, Mg b, Na D, Hα and the Ca II IR triplet)
+over 393-866 nm.  The covariance is inflated by χ²_ν.
+
+| channel | c₀ (nm) | c₁ | c₂ | χ²_ν | FWHM at 400 / 500 / 600 / 700 / 850 nm |
+|---|---|---|---|---:|---|
+| E | 2.80 ± 0.12 | +0.03 ± 0.04 | −0.02 ± 0.03 | 26 | 2.66 / 2.75 / 2.80 / 2.80 / 2.73 (± 0.06-0.14) |
+| Ld | 3.17 ± 0.11 | −0.04 ± 0.04 | −0.04 ± 0.03 | 13 | 3.07 / 3.16 / 3.17 / 3.08 / 2.79 (± 0.05-0.19) |
+| Lu | 3.28 ± 0.11 | −0.10 ± 0.06 | −0.08 ± 0.04 | 5 | 3.16 / 3.30 / 3.28 / 3.11 / 2.54 (± 0.06-0.32) |
+
+Caveats for Phase 1:
+- **These are Gaussian widths of solar features, not SRF widths.**  They are
+  biased high by the intrinsic line widths, by different amounts per line;
+  that is what χ²_ν = 5-26 measures.  The per-line scatter about the curves
+  is 0.2-0.3 nm.
+- **Only the E − L difference is reliable.**  The absolute level (the SRF
+  itself) needs the HSRS template fit of task 3b (see Q10).
+- **Curvature is poorly constrained.**  Every c₂ is within 2σ of zero, and
+  above ~700 nm the curves rest on Hα and the Ca II IR triplet only.  Use
+  them only inside 393-866 nm.
+
+**2. Does E ≠ L survive the uncertainties?  Yes, in the blue and green; not
+in the red.**
+
+- **Per line.**  FWHM_Ld − FWHM_E is 0.25-0.59 nm at every SRF line from
+  Ca K to Na D, each at 5-15σ.  At Hα it is 0.16 nm (2.7σ), and at the
+  Ca II IR triplet 0.09-0.16 nm (< 1.5σ).  Lu − E is similar: 0.32-0.74 nm
+  at 5-12σ from Ca K to Na D, 0.31 at Hα, and ≈ 0 ± 0.2 nm in the Ca II IR.
+- **Model level.**  Ld − E is 0.41-0.42 ± 0.09 nm at 400-500 nm (4-5σ),
+  0.37 ± 0.16 at 600 nm (2.3σ) and 0.14 ± 0.19 at 800 nm.  The difference
+  fades to the red.  Model-level significance is lower than per-line, because
+  the χ²_ν inflation charges both curves for the intrinsic-width scatter,
+  which largely cancels in the difference.
+- **Hedge.**  Of the lines where E ≠ L is strongest, five of seven are blends
+  (Ca H/K, G band, Mg b, Na D).  Among the unblended lines, only Hβ is
+  individually decisive (0.49 nm, 7.5σ; Hα 2.7σ).  The difference is common
+  to blends and clean lines, so it is not a blend artefact.  But a clean-line
+  confirmation at more S/N (more sequences, task 10) or through the template
+  fit would make it airtight.
+- **The residual structure matches H2** (task 7).  α₂ = 0.93 ± 0.06 in Ld/Ed
+  and 1.08 ± 0.14 in ρw.  H1 has the wrong sign and is ~9× too small.  This
+  check is partly circular; see the Build #7 log.
+- **One L SRF.**  Ld ≈ Lu to −0.06 ± 0.03 nm at the clean lines (task 6).
+  The exceptions are Ca H and the G band, where Lu is 0.16-0.33 nm wider,
+  plausibly from Lw content.  Ld is the better L-channel probe (Q11).
+- **Stable within the sequence.**  The two sky series, ~50 s apart, agree to
+  |z| < 1.7.
+
+**Verdict:** G0(a) is not met on this sequence, i.e. H2 stays.  It is one
+sequence; task 11 decides.
+
+**3. Centroid offsets vs the 0.1 nm threshold of G0(c)**
+
+- **Relative (L − E), which drives H1: below threshold.**
+  - Weighted mean over the clean lines (Hβ, Hα, Ca II IR): Ld − E = **+0.050
+    ± 0.011 nm** (χ²_ν 0.9, max 0.075 nm) and Lu − E = +0.038 ± 0.018 nm.
+  - Including the blends: +0.055 ± 0.015 nm.  Only Ca K exceeds 0.1 nm
+    (+0.131 ± 0.013), a blend.
+  - The offset is significant (4.5σ) but half the threshold.  It agrees with
+    the joint-fit shift of task 7 (−0.04 ± 0.01 nm in that sign convention).
+- **Absolute (measured − lab), which would drive a recalibration:
+  undetermined.**
+  - Weighted means over the clean lines: +0.15 ± 0.05 nm against air and
+    −0.05 to 0.00 nm against vacuum, the same in all three channels.
+  - The lines disagree by ±0.15 nm, i.e. 10× their errors: Hα sits on the
+    air scale (−0.02), while Hβ (+0.20) and the Ca II IR (+0.10 to +0.37)
+    sit closer to vacuum.
+  - So the 0.1 nm test can't be applied until Kevin says which scale HYPSTAR
+    uses (note to Kevin, item 5) and the template fit gives unbiased
+    centroids.
+  - If the scale is air, E, Ld and Lu are all offset by about +0.15 nm, which
+    exceeds the threshold.  But they are offset *together*, so it would not
+    feed H1.
+- **Verdict:** G0(c) relative: no recalibration is needed for H1.  G0(c)
+  absolute: open.
+
+**4. Evidence against the Gaussian**
+
+- Per-scan χ²_ν (task 6): clean lines 1.2-1.8, blends 1.6-3.2, bands 30+.
+  The Gaussian is adequate for isolated lines at single-scan S/N.  It fails
+  for features that aren't single lines, which says more about the line
+  model than about the SRF shape.
+- On the mean spectra (√6 more S/N), χ²_ν per line is 3-7 (task 5), so even
+  clean lines show structure beyond a Gaussian-on-a-line.  This can't yet
+  separate a non-Gaussian SRF from non-Gaussian intrinsic profiles (Hα and
+  Hβ have broad wings, Ca II IR has damping wings).
+- There are no obvious asymmetric residuals in the task 7 profiles.  The
+  measured Ld/Ed bumps match the H2 shape, apart from Na D (weaker,
+  α₂ ≈ 0.3-0.9) and Hα (stronger, α₂ ≈ 1.2-1.5).
+- **Nothing here argues against a Gaussian SRF.**  The direct test is the
+  template fit (task 3b): with the true line profiles supplied by HSRS, the
+  residuals left over are the SRF shape.
+
+**Other findings for Kevin / later phases**
+
+- L1C `u_rel_random_*` are zeros, and L2A `std_reflectance` overstates the
+  per-pixel noise (it includes broadband scan changes).
+- Lu appears to carry an additive, line-free component in the red (EW_Lu/EW_E
+  = 0.64-0.85 at O2-B and the Ca II IR, against ≈ 1 in Ld): stray light or a
+  dark residual?
+- In the red the ρw structure at the lines is not Ed-borne (task 7).
+
+**Question 10 -- template fit before Phase 1?**  The widths handed over are
+line widths, not SRF widths, so a Phase 1 twin experiment built on them would
+use an L SRF too wide by an unknown ~0.1-0.5 nm per channel.  The E − L
+difference is right to first order.
+*Default: do task 3b (HSRS template fit) next, before Phase 1 reads the JSON,
+and overwrite `veit_srf_model.json` with the template models.  Keep the
+empirical file as `hypernet/data/veit_srf_model_empirical.json`.  If Phase 1
+needs to start first, it uses the empirical file and flags every result as
+provisional.*
+>A. Follow your default
+
+**Question 11 -- which channel is "L"?**  Ld and Lu share one SRF to ~0.1 nm,
+but Lu is noisier, faint in the red, and shows possible Lw/Raman and
+additive-light effects.
+*Default: Ld is the reference L channel for the SRF (tasks 10-11 and
+Phase 2), Lu is carried as a check, and the gate compares E with Ld.*
+>A. Follow your default.
+
 ## Logs
 
 ### 2026-09-28 -- Setup #1 (Opus 5.5)
@@ -689,3 +819,170 @@ Let's go with your suggestion and we may revisit it later.
   (the swap, the joint Ca H/K widths, and the rows that differ).  The table
   values are unchanged.
 - `pytest -q`: 43 passed (no package code changed in this step).
+
+### 2026-09-28 -- Build #6 (Opus 5.5)
+
+- No new JXP answers since Q9.
+- New `wiggles/phase0a_scans.py`.  It reuses `phase0a_veit.load()` and
+  `fit_all()` and adds:
+  - every line fitted in every single scan (6 E, 6 Ld, 6 Lu), weighted by
+    the flattened single-scan error;
+  - the two Ld sky series fitted separately (3 scans each);
+  - per line and channel, the scan std of centroid, FWHM and depth over the
+    median `curve_fit` error, plus the error of the mean from the scan
+    scatter;
+  - the Ld − Lu test on the mean fits, with z taken over the larger of the
+    fit and scan errors;
+  - depths and weak-line equivalent widths (EW = depth × σ × √(2π)) as a
+    diagnostic.
+- Outputs:
+  - `$OS_COLOR/hypernet/wiggles/phase0/veit_scan_fits.parquet` (all
+    per-scan fits);
+  - `wiggles/phase0_veit_scans.csv` (a 39-row summary);
+  - `wiggles/figs/phase0/veit_scan_scatter.png`, in four panels: the FWHM
+    and centroid ratios (log axis), Ld − Lu FWHM, and L/E depth and EW.
+- **The errors are right (Q9 vindicated).**
+  - Scan std / median fit error is 0.4-1.9, median ≈ 0.9, for FWHM and
+    centroid in all three channels.
+  - The mean-spectrum fit error and the scan-scatter error of the mean agree
+    to within ~×1.5 (e.g. Hα E FWHM 0.041 vs 0.025 nm, Ld Hβ 0.051 vs
+    0.066).
+  - The outlier is Lu Ca II 849.8, with ratios of 2.3 for FWHM and 4.0 for
+    the centroid: the faint red water view, in the joint 849.8/854.2 fit.
+- **The Gaussian is adequate at single-scan S/N for isolated lines only.**
+  Median per-scan χ²_ν:
+  - 1.1-1.5 at Hβ, Mg b, Na D and Hα;
+  - 0.9-1.8 at the Ca II IR lines;
+  - 1.6-5 at Ca H/K;
+  - 16 at the G band in E;
+  - 4 at O2-B, and 60-170 at O2-A in E and Ld.
+
+  The misfits are exactly the blends and bands.  This is the strongest
+  argument yet for the template fit (task 3b).
+- **The widths are stable over the sequence.**  Ld series A (before the
+  water view) vs B (after), ~50 s apart with the sky ~5 % brighter or
+  dimmer: every |z| < 1.7 in FWHM and < 1.8 in centroid (G band −0.10 ±
+  0.07, Hβ +0.17 ± 0.10 nm).
+- **Ld = Lu.**
+  - FWHM over the 10 SRF lines: χ² = 26.5 for 10 dof.  Two lines have
+    |z| > 2: Ca H (−0.33 ± 0.09 nm, 3.9σ) and the G band (−0.16 ± 0.07,
+    2.2σ).
+  - Weighted mean Ld − Lu = −0.06 ± 0.03 nm, i.e. Lu slightly wider.
+  - Centroids: χ² = 13.1 for 10 dof, no |z| > 2; mean Ld − Lu = +0.020 ±
+    0.010 nm.
+  - O2-A: +0.46 ± 0.04 nm (11σ).  That is expected for a band whose shape
+    depends on path: Lu adds the water-leaving and surface-reflected paths.
+  - Reading: one L SRF to ~0.1 nm at the clean lines.  The blue blend
+    excess in Lu is plausibly Lw content (water Raman filling of Ca H and
+    the G band in clear water) rather than optics.  **The sky (Ld) is the
+    cleaner L-SRF probe, and Lu the check.**
+- **Depths and EW (diagnostic, Ring).**
+  - Depths in Ld and Lu are 10-17 % shallower than in E from 390 to 660 nm,
+    but EW_Ld / EW_E = 0.91-1.09 there.
+  - So the shallower lines are mostly the wider L SRF (EW is conserved),
+    not Ring filling-in.  Ld's lowest EW ratios, Ca H 0.91 and Hα 0.94,
+    leave room for a few-per-cent filling.
+  - In Lu, EW_Lu / EW_E falls to 0.64-0.85 at O2-B and the Ca II IR lines,
+    where the water view is faintest, while Ld stays at 1.0-1.1.  That
+    suggests an **additive, line-free component in Lu in the red** (stray
+    light or a dark/offset residual), which dilutes relative depths.  Worth
+    raising with Kevin, and a reason not to use Lu red lines for the SRF.
+- `pytest -q`: 43 passed (no package code changed).
+
+### 2026-09-28 -- Build #7 (Opus 5.5)
+
+- No new JXP answers since Q9.
+- New `wiggles/phase0a_budget_veit.py`.  `budget(irr, rad, l2a, fits_E,
+  fits_L)` is the per-sequence function that task 12 will loop over; `main()`
+  runs it on VEIT.
+  - **Windows.**  One per group (Ca H/K and Ca II 849.8/854.2 jointly),
+    ±5 nm, with a linear continuum through the pixels 5-7 nm out.
+    Residual = y/continuum − 1.
+  - **Measured:** Ld/Ed_L and Lu/Ed_L, with Ld interpolated in time to the
+    water view and Ed_L = `np.interp` of E, i.e. the processor's own
+    quantities; plus ρw from L2A.
+  - **H1:** Ed_cubic/Ed_linear − 1.
+  - **H2:** the E line re-observed at the Ld width with its equivalent width
+    conserved, over the E line.  It uses the task 5 E depth/σ/μ and Ld σ;
+    the measured L depths are not used, so the Ring effect is kept out.
+  - **Metrics:**
+    - the rms of each profile and of the noise within ±5 nm;
+    - ρw in absolute units against ρw × H2 and ρw × H1, with noise
+      `std_reflectance/√n`;
+    - weighted-LS projections: onto H2 alone (α₂), H1 alone (α₁), and jointly
+      onto (H1, H2, shift = d ln E_line/dλ, in nm);
+    - rms ρw''.
+  - Outputs: `wiggles/phase0_veit_budget.csv` (11 rows) and
+    `wiggles/figs/phase0/veit_budget.png`.  The figure shows four example
+    profiles, the rms per line for the ratios, the rms for ρw (absolute), and
+    α₂ per line.
+- **H2 accounts for the line structure; H1 doesn't.**
+  - rms over ±5 nm, measured Ld/Ed vs H2 vs H1: Ca H/K 2.7e-2 / 2.4e-2 /
+    2.8e-3; G band 1.7e-2 / 1.6e-2 / 1.3e-3; Hβ 7.7e-3 / 8.0e-3 / 5e-5; Mg b
+    5.8e-3 / 5.7e-3 / 1.8e-4; Na D 5.8e-3 / 5.1e-3 / 5.7e-4.
+  - At Hα H2 gives half the measured value (5.0e-3 vs 2.7e-3).  At the Ca II
+    IR and O2-B the measured residual is close to the noise.
+  - The median rms_H2/rms_H1 over the SRF lines is 9 (range 1.4-160).
+  - α₂ (H2 alone), weighted over the 10 SRF lines: **0.93 ± 0.06** in
+    Ld/Ed, **1.01 ± 0.07** in Lu/Ed and **1.08 ± 0.14** in ρw.  Per line,
+    α₂ is 0.8-1.5 from Ca H/K to Hα, with Na D in Lu and ρw low (0.3 ± 0.5).
+  - The H1 profile has the **opposite sign** to the measured feature.  Linear
+    interpolation overestimates Ed at a line core, so the ratio dips there;
+    the measured ratio peaks, as H2 predicts.  So α₁ alone is large and
+    negative (−3.7 ± 0.3 in Ld/Ed), and the H1 and H2 bases are
+    anti-correlated (r = −0.6 to −0.85).
+  - The joint (H1, H2, shift) fit is therefore degenerate: α₂ drops to 0.5
+    and α₁ goes to −3 to −6, which is unphysical.  It is reported but not
+    used.
+  - Its shift term is small, −0.04 ± 0.01 nm (Ld/Ed): a residual L − E
+    centroid offset of the size task 5 found.
+- **ρw.**
+  - The measured ρw residual rms matches ρw × H2 from Ca H/K to Na D
+    (e.g. G band 2.4e-4 vs 1.8e-4, Hβ 1.5e-4 vs 1.2e-4).  ρw × H1 is 10-100×
+    smaller.
+  - In the red (O2, Ca II IR, H₂O) the ρw residual stays at 0.3-3e-4 while
+    both predictions fall below 1e-5.  That structure is not Ed-borne; there
+    ρw → 0, so it comes from the Lu − ρ·Ld subtraction (Lu's red additive
+    component, task 6; O2 path differences).
+  - The L2A `std_reflectance/√n` noise is ≥ the measured residual at several
+    lines.  Like the raw L1A scatter (Q9), it includes broadband scan-to-scan
+    changes and overstates the per-pixel noise.
+- **Caveat: the test is partly circular.**  H2 is built from Gaussian fits
+  to the same E and Ld spectra whose ratio it predicts.  α₂ ≈ 1 does not
+  independently prove the SRF difference.  What it does establish:
+  - (i) the ratio residual is what the measured width difference produces
+    **with EW conserved**, so Ring filling-in is not needed to explain it;
+  - (ii) the ρw wiggle at the Fraunhofer lines has the H2 shape and full
+    amplitude;
+  - (iii) linear interpolation has the wrong sign and is 10× too small.
+
+  The independent tests come from Phase 1 (twin experiment) and Phase 3
+  (correcting the SRF and seeing whether ρw'' drops).
+- **The task's closed form**, depth × (FWHM_L² − FWHM_E²)/FWHM_L², is
+  1.5-2× the H2 central value.  To first order the central value is
+  a(1 − σ_E/σ_L) ≈ a(σ_L² − σ_E²)/(2σ_L²).  Both are in the CSV
+  (`h2_closed_form`, `h2_central`).  Task 12 should use the profile.
+- `pytest -q`: 43 passed.
+
+### 2026-09-28 -- Build #8 (Opus 5.5)
+
+- No new JXP answers since Q9.
+- New `wiggles/phase0a_interim.py`: the report's numbers (model FWHM with
+  errors, E − L differences and significance, per-line and weighted L − E
+  centroids, χ²_ν by line class), all read from the committed products.
+- Fixed a precision bug: the committed CSVs were written with `%.5g`, which
+  rounds centroids near 400-900 nm to 0.01 nm.  The writers now use `%.7g`
+  (`%.6g` for the budget), and I re-ran `phase0a_veit.py`, `phase0a_scans.py`
+  and `phase0a_budget_veit.py`.  The JSON and figures were unaffected (they
+  are computed from the full-precision fits).
+- Wrote the 0a interim report to Q&A (Build #8), covering four points:
+  - the FWHM(λ) coefficients and their caveats;
+  - E ≠ L survives at 5-15σ per line from Ca K to Na D, and fades to
+    < 1.5σ in the Ca II IR, so G0(a) is not met and H2 stays;
+  - the relative L − E centroid is +0.050 ± 0.011 nm, below 0.1 nm; the
+    absolute offset is open (air/vacuum);
+  - the Gaussian is adequate for clean lines, and it is the line model, not
+    the SRF shape, that fails at blends and bands.
+- Added Q10 (task 3b before Phase 1) and Q11 (Ld as the reference L
+  channel), both with defaults.
+- `pytest -q`: 43 passed.

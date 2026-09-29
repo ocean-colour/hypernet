@@ -26,7 +26,7 @@ goes into the function first.
 - **JXP runs git.**  Claude does not run any state-changing git command.
 - Run scripts **from the repository root** so `hypernet` imports resolve
   (`python -m hypernet.whn_explore 1`, `python wiggles/phase0a_veit.py`).
-- Run `pytest -q` after each step where relevant.  34 tests today; the archive-
+- Run `pytest -q` after each step where relevant.  43 tests today; the archive-
   dependent ones skip themselves when `$OS_COLOR` is not mounted.
 - **Tier 2** -- steps that read the VEIT sample or the archive need `$OS_COLOR`
   mounted.  Do **not** unset `$OS_COLOR`.
@@ -398,6 +398,50 @@ All defaults were accepted, except that Q5 uses `wiggles` instead of
   - `group` means "fitted jointly".  `blend` means "the feature is itself a
     blend or band", i.e. unsuitable for absolute centroids.
 
+### Build #4 -- 2026-09-28 (Opus 5.5): what the VEIT files say, and one question
+
+From `wiggles/phase0a_l1c_consistency.py`:
+
+- **How L1C is built.**
+  - Lu is the six L1A water scans, unchanged.
+  - Ld is **the two sky-series means interpolated linearly in time** to the
+    water-view time: it matches to 4.5 × 10⁻⁵, whereas the plain 6-scan mean
+    is off by 3 × 10⁻³.
+  - E also has two series (before and after); here they bracket the water
+    view symmetrically (weight 0.500), so the time interpolation equals the
+    plain mean.
+  - L1C `irradiance` = `np.interp` of that E to ≤ 4 × 10⁻⁵ over 400-900 nm.
+    It departs at low-signal pixels: 2 × 10⁻⁴ at the 935 nm H₂O band and
+    2-3 % within 10 nm of the grid ends.  This suggests the processor handles
+    some pixels differently when averaging (e.g. outlier rejection); it
+    doesn't matter for the lines.
+- **No usable uncertainties in L1C.**  `u_rel_random_*` and
+  `std_downwelling_radiance` are all zero.
+- **The scan-to-scan scatter is mostly broadband.**  Relative std/mean,
+  median over 400-900 nm:
+
+  | | raw | after removing a smooth (20 px) scale per scan |
+  |---|---:|---:|
+  | E | 6.3e-3 | 4.1e-3 |
+  | Lu | 5.1e-2 | 7.5e-3 |
+  | Ld (both series) | 5.9e-2 | 4.3e-3 |
+  | Ld (within one series) | 3.7-4.0e-3 | 3.7-3.9e-3 |
+
+  The sky changed by about 5 % between its two series, and the water view
+  jitters by about 5 % scan to scan (glint and waves).  A line fitted on a
+  free continuum sees only the flattened scatter.
+
+**Question 9 -- revise Q6?**  The agreed Q6 default (raw std/√N) would
+overstate the per-pixel errors by 7x for Lu and 14x for Ld.  That makes
+χ²_ν ≪ 1 and the `curve_fit` errors too large, which would bias the task 6
+comparison of scan scatter against fit errors.
+*Default: use `srf.scan_errors(scans, flatten_px=20)` (new option; the mean
+is unchanged) for the errors in tasks 5, 6 and 10, and report the raw scatter
+alongside.*
+
+>A. Ok, we should avoid overstating the errors for the reasons you mentioned.
+Let's go with your suggestion and we may revisit it later.
+
 ## Logs
 
 ### 2026-09-28 -- Setup #1 (Opus 5.5)
@@ -513,3 +557,135 @@ All defaults were accepted, except that Q5 uses `wiggles` instead of
   - `from_lines` on a synthetic 13-line spectrum recovering the quadratic to
     0.02 nm and a +0.04 nm offset.
 - `pytest -q`: **34 passed**.
+
+### 2026-09-28 -- Build #4 (Opus 5.5)
+
+- New module `hypernet/whn_l1a.py`, following `whn_explore`'s style (dict
+  returns, numpy docstrings):
+  - `wavelengths_root(path=None)`: explicit path, then
+    `$OS_COLOR/WATERHYPERNET/Wavelengths`; raises `FileNotFoundError`.
+  - `parse_name`, `find_products(root, recursive=True)` (a DataFrame
+    index; recursive for the 0b delivery subfolders) and
+    `sequence_files(site, seq_time)` (product → path; raises on ambiguity).
+  - `load_l1a_irr(path)`: `wave`, `scans`, `mean`, `bandwidth`, the per-scan
+    geometry (`sza, saa, vza, vaa, paa, time, series_id, quality_flag`) and
+    `meta` (attributes: `system_id`, cal files and dates, ...).
+  - `load_l1a_rad(path)`:
+    - `Lu` (vza < 90, water) and `Ld` (vza ≥ 90, sky) sub-dicts, each with
+      `scans`, `mean` and geometry.
+    - `Lu['t_mean']`, and `Ld['at_lu_time']`, the sky interpolated in time
+      as L1C does.
+  - `load_l1c(path)` and `load_l2a(path)`: `irradiance`,
+    `downwelling_radiance`, `upwelling_radiance`, `water_leaving_radiance`,
+    `reflectance` and `reflectance_nosc`, plus `rhof`, `epsilon`, the
+    geometry and, for L2A, the `std_*` variables and scan counts.  Arrays
+    keep the file layout.
+  - `series_means`, `interp_in_time`, and `check_against_l1c(irr, rad, l1c)`
+    (maximum relative E / Lu / Ld differences against L1C).
+- `hypernet/srf.py`:
+  - new `flatten_scans()`, which divides out a smooth per-scan scale;
+  - new `scan_errors(..., flatten_px=None)` option (Q&A Q9).
+- New `wiggles/phase0a_l1c_consistency.py`, the diagnostics behind the Build
+  #4 Q&A: per-scan metadata, how L1C is built, the zero L1C uncertainties,
+  raw vs flattened scatter, and where L1C E departs from `np.interp`.
+- New `hypernet/tests/test_whn_l1a.py`, 8 tests:
+  - Tier 1: filename parsing, time interpolation, explicit root.
+  - Tier 2 (`needs_wavelengths`), the VEIT sample:
+    - 1536/1538 px; 6 IRR, 12 RAD (6 Lu + 6 Ld) and 6 L1C scans;
+    - the vza split (L1C vza = the water view; the sky is > 5x brighter);
+    - L1C E = `np.interp` of the L1A mean to 1e-4 over 400-900 nm (1e-3
+      over 380-1000);
+    - `check_against_l1c`: E < 1e-4, Lu exact, Ld < 1e-3;
+    - L2A sanity.
+  - The spec's "1e-4" holds only over 400-900 nm; see the Q&A.
+- Also in `test_srf.py`: a test that flattening recovers 0.4 % pixel noise
+  under 5 % broadband scan changes.
+- `pytest -q`: **43 passed**.
+
+### 2026-09-28 -- Build #5 (Opus 5.5)
+
+- JXP accepted Q9: errors from `scan_errors(..., flatten_px=20)`, with the
+  raw scatter reported alongside.
+- New `wiggles/phase0a_veit.py`:
+  - Loads the VEIT sequence through `whn_l1a` and fits `srf.LINES` in:
+    - E: the mean of the 6 L1A_IRR scans;
+    - Ld: the mean of the 6 sky scans (both series, **not** the
+      time-interpolated L1C Ld, for S/N);
+    - Lu: the mean of the 6 water scans.
+  - Each channel is fitted twice, with flattened errors and with raw errors
+    (`err_kind`).
+  - `SRFModel.from_lines` per channel on the flattened fits, with
+    `scale_cov=True`.
+  - Writes:
+    - `$OS_COLOR/hypernet/wiggles/phase0/veit_lines.parquet`;
+    - `wiggles/phase0_veit_lines.csv` (78 rows = 13 lines × 3 channels × 2
+      error kinds);
+    - `hypernet/data/veit_srf_model.json` (E, Ld, Lu, with meta: method
+      "empirical ... to be superseded by task 3b", errors, cal dates);
+    - `wiggles/figs/phase0/veit_fwhm_vs_lambda.png`.
+  - The figure has two panels: FWHM per line with the quadratic ±1σ band,
+    and FWHM_L − FWHM_E per line with the model difference.  Palette slots
+    1-3 plus distinct markers; filled = clean, open = blend/band, faded =
+    diagnostic.
+  - Stdout: the re-derived §2.3 table next to the plan's (relabelled), and
+    the absolute offsets in air and vacuum.
+- **Errors.**  The median relative error of the mean over 400-900 nm, raw
+  vs flattened:
+  - E: 2.6e-3 vs 1.7e-3;
+  - Ld: 2.4e-2 vs 1.8e-3;
+  - Lu: 2.1e-2 vs 3.1e-3.
+
+  With raw errors the per-line χ²_ν is 0.03 (Ld) and 0.09 (Lu), which
+  confirms Q9.  With flattened errors it is 3-7: the Gaussian-on-linear-
+  continuum model is not adequate to the S/N, which argues for the template
+  fit.
+- **Reproducing plan §2.3** (after swapping its mislabelled Ld/Lu columns):
+  - G band, Hβ, Mg b, Na D, Hα (E, Ld) and O2-B reproduce to ≤ 0.05 nm.
+  - Hα Lu: 3.08 vs 2.96 (reweighting; Lu is the noisiest channel).
+  - **Ca H/K change a lot with the joint fit.**
+    - FWHM_E 2.67 / 2.77 (plan 1.83 / 1.91); Ld 3.08 / 3.02; Lu 2.99 / 3.35.
+    - The E-L excess shrinks from 0.6-0.9 nm to 0.25-0.6 nm.
+    - The Lu − E centroids, which had opposite signs (+0.20 / −0.14), become
+      +0.08 / +0.01.  So the sign flip was a blend artefact.
+    - Neither version is a good SRF measure, because the H/K wings extend
+      past the window.
+  - O2-A: Ld 3.74 vs 3.42, Lu 3.28 vs 3.46.  The band shape depends on the
+    path and the weights, which is why it is diagnostic only.
+- **What survives:** FWHM_L − FWHM_E ≈ 0.4-0.6 nm over 400-600 nm (G band,
+  Hβ, Mg b, Na D, each at > 5σ), ≈ 0.2-0.3 nm at Hα, and ≈ 0 ± 0.2 nm at the
+  Ca II IR triplet.
+  - G0(a) E ≠ L therefore holds on this sequence, with the difference fading
+    to the red.
+  - The earlier "0.5-0.9 nm" for the blue edge rested on the Ca H/K single
+    fits.
+  - Ld and Lu agree to within 0.1-0.2 nm, but Lu is systematically wider at
+    Ca H, the G band and Hα.  Task 6 tests this.
+- **The FWHM(λ) quadratics (flattened errors, cov × χ²_ν):**
+  - E: flat, 2.66 / 2.75 / 2.80 / 2.80 / 2.73 nm at 400 / 500 / 600 / 700 /
+    850 nm, χ²_ν = 26.
+  - Ld: 3.07 / 3.16 / 3.17 / 3.08 / 2.79, χ²_ν = 13.
+  - Lu: 3.16 / 3.30 / 3.28 / 3.11 / 2.54, χ²_ν = 5.
+  - The large χ²_ν says the per-line widths scatter about any smooth curve
+    by ~0.2-0.3 nm, far above their 0.02-0.05 nm errors.  That is the
+    line-dependent intrinsic broadening (blends, G band 2.49 vs Mg b 3.06 in
+    E).
+  - So the empirical quadratic is a fair relative description, not an
+    absolute SRF.  **Recommend doing task 3b (HSRS template) before Phase 1
+    consumes `veit_srf_model.json`.**
+- **Absolute wavelength scale (G0(c)): inconclusive.**
+  - The clean lines disagree among themselves by ±0.15 nm, i.e. 10× their
+    0.015 nm errors:
+    - Hα: −0.02 nm vs air, −0.20 vs vacuum;
+    - Hβ: +0.20 vs air, +0.06 vs vacuum;
+    - Ca II 849.8 / 854.2 / 866.2: +0.37 / +0.10 / +0.25 vs air.
+  - The weighted means are +0.15 nm vs air and −0.05 to 0.00 nm vs vacuum in
+    all three channels.  That leans towards vacuum but rests on Hβ and the
+    Ca II IR lines, which the empirical fit handles worst.
+  - Kevin's answer on air/vacuum, and the template fit, are both needed.
+  - The relative L − E centroids are small and consistent: +0.02 to +0.1 nm
+    at the clean lines.
+- **Plan §2.3 corrected** (Q7 default, approved): the headers now read
+  `FWHM Lu | FWHM Ld | centroid Lu − E`, followed by a dated correction note
+  (the swap, the joint Ca H/K widths, and the rows that differ).  The table
+  values are unchanged.
+- `pytest -q`: 43 passed (no package code changed in this step).

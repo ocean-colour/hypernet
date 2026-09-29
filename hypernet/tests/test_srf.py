@@ -198,3 +198,17 @@ def test_srfmodel_from_lines():
     assert m.offset == pytest.approx(0.04, abs=0.01)
     assert m.lam_min == pytest.approx(393.366) and m.frame == 'air'
     assert m.sigma(600.0) == pytest.approx(TRUE[0] / srf.FWHM_PER_SIGMA, abs=0.01)
+
+
+def test_scan_errors_flatten_removes_broadband_scatter():
+    rng = np.random.default_rng(7)
+    base = _lines(WAV, [(0.3, 500.0, 1.2)])
+    scale = 1.0 + 0.05 * rng.normal(size=6)          # 5 % broadband changes
+    tilt = 1.0 + 0.02 * rng.normal(size=6)[None, :] * (WAV[:, None] - 600) / 300
+    noise = 1.0 + 0.004 * rng.normal(size=(WAV.size, 6))  # 0.4 % pixel noise
+    scans = base[:, None] * scale[None, :] * tilt * noise
+    mean, _, raw = srf.scan_errors(scans)
+    mean_f, _, flat = srf.scan_errors(scans, flatten_px=20)
+    np.testing.assert_array_equal(mean, mean_f)
+    assert np.median(raw / mean) > 0.02
+    assert np.median(flat / mean) == pytest.approx(0.004, rel=0.25)

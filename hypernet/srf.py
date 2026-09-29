@@ -89,19 +89,52 @@ _FIT_KEYS = ['mu', 'mu_err', 'sigma', 'sigma_err', 'fwhm', 'fwhm_err',
              'chi2_nu', 'npix', 'ok']
 
 
-def scan_errors(scans, axis=1):
+def flatten_scans(scans, axis=1, smooth_px=20.0):
+    """Remove a smooth multiplicative change of each scan relative to the mean.
+
+    Each scan is divided by a Gaussian-smoothed (``smooth_px`` pixels, along
+    wavelength) version of its ratio to the mean spectrum.  This takes out
+    broadband changes between scans (sky brightness, glint, pointing) while
+    keeping pixel-to-pixel noise and line-scale changes (a few pixels).
+
+    Args:
+        scans (np.ndarray): spectra, with scans along ``axis``.
+        axis (int): the scan axis.
+        smooth_px (float): Gaussian sigma of the smoothing, pixels.
+
+    Returns:
+        np.ndarray: the flattened scans, same shape as ``scans``.
+    """
+    from scipy.ndimage import gaussian_filter1d
+    scans = np.moveaxis(np.asarray(scans, dtype=float), axis, -1)
+    with np.errstate(invalid='ignore', divide='ignore'):
+        ratio = scans / np.nanmean(scans, axis=-1, keepdims=True)
+    ratio = np.where(np.isfinite(ratio), ratio, 1.0)
+    smooth = gaussian_filter1d(ratio, smooth_px, axis=0, mode='nearest')
+    return np.moveaxis(scans / smooth, -1, axis)
+
+
+def scan_errors(scans, axis=1, flatten_px=None):
     """Mean spectrum and its per-pixel uncertainty from repeated scans.
 
-    L1A files carry no uncertainty variables, so the scan-to-scan scatter
-    is the noise estimate.  With ``s`` the sample standard deviation
-    (``ddof=1``) over N scans:
+    L1A files carry no uncertainty variables (and the L1C ``u_rel_random_*``
+    are zero), so the scan-to-scan scatter is the noise estimate.  With ``s``
+    the sample standard deviation (``ddof=1``) over N scans:
 
     - the error of the mean spectrum is ``s / sqrt(N)``;
     - the error of a single scan is ``s``.
 
+    The raw scatter is dominated by broadband changes between scans (in the
+    VEIT sample 5-6 % in Lu and Ld against 0.4-0.8 % pixel noise; see
+    ``wiggles/phase0a_l1c_consistency.py``).  With ``flatten_px`` the scatter
+    is taken from :func:`flatten_scans` instead, which is the right noise for
+    a line fit on a free continuum.  The mean is always that of the raw scans.
+
     Args:
         scans (np.ndarray): spectra, with scans along ``axis``.
         axis (int): the scan axis.  L1A arrays are (wavelength, scan), hence 1.
+        flatten_px (float, optional): smoothing sigma (pixels) for
+            :func:`flatten_scans`; None uses the raw scatter.
 
     Returns:
         tuple: (mean, err_mean, err_scan), each along wavelength.
@@ -109,8 +142,9 @@ def scan_errors(scans, axis=1):
     scans = np.asarray(scans, dtype=float)
     n = np.sum(np.isfinite(scans), axis=axis)
     mean = np.nanmean(scans, axis=axis)
+    work = scans if flatten_px is None else flatten_scans(scans, axis, flatten_px)
     with np.errstate(invalid='ignore', divide='ignore'):
-        s = np.nanstd(scans, axis=axis, ddof=1)
+        s = np.nanstd(work, axis=axis, ddof=1)
         return mean, s / np.sqrt(n), s
 
 

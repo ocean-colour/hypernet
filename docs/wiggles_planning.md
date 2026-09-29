@@ -106,7 +106,7 @@ result.**
   E grid does not help: the best shift is +0.1 nm and gains 3 %.
 - **The E and L SRFs differ.** Gaussian line fits (FWHM, nm):
 
-| line | λ (nm) | FWHM E | FWHM Ld | FWHM Lu | centroid L − E (nm) |
+| line | λ (nm) | FWHM E | FWHM Lu | FWHM Ld | centroid Lu − E (nm) |
 |---|---:|---:|---:|---:|---:|
 | Ca K | 393.4 | 1.83 | 2.47 | 2.46 | +0.20 |
 | Ca H | 396.9 | 1.91 | 2.81 | 2.73 | −0.14 |
@@ -121,7 +121,14 @@ result.**
   E is sharper than L by 0.5–0.9 nm in the blue and the two converge by
   ~690 nm. Lu matches Ld throughout, as expected for one optical path. (Ca H/K
   is a blended pair and the 936 nm H₂O band is broad, so their centroids are
-  less reliable; the 940 nm row is omitted.)
+  less reliable; the 940 nm row is omitted.) *Correction (2026-09-28):* the
+  first version of this table had the Ld and Lu columns swapped, because
+  `viewing_zenith_angle` is measured from nadir (vza < 90 is the water view).
+  The headers above are now right; the conclusions are unchanged. A joint
+  Ca H/K fit (`wiggles/phase0a_veit.py`) gives wider Ca H/K widths (E 2.7,
+  L 3.0–3.4 nm), which shrinks the E–L difference there to 0.25–0.6 nm; the
+  other entries reproduce to ≤ 0.05 nm except Hα in Lu (+0.12 nm) and the
+  O2-A band (±0.3 nm), whose width depends on the fit weights.
 - **The wavelength scales already agree.** At the clean lines the E–L
   centroid difference is 0.03–0.08 nm (0.1–0.2 px), and the absolute scale is
   within ~0.05 nm of the laboratory wavelengths at Hα and Na D. These offsets

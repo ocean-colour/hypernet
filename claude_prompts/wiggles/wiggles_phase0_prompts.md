@@ -187,6 +187,8 @@ goes into the function first.
    the centroid offsets against the 0.1 nm threshold of G0(c), and anything
    that argues against the Gaussian.  Log your work.
 
+8b. **0a interim report slides.**  Create a slideset in `docs/slides/wiggles_phase0_report.pptx` with a description of what you have accomplished so far.  Include the figures and tables from tasks 5-7.  Log your work.  When using text, use no font size smaller than 20pt
+
 ### Build (0b, full request -- after the data arrive)
 
 9. **Ingest and index.**  Mirror the delivery with `rclone` to a subfolder of
@@ -1195,3 +1197,49 @@ report.  Item 2 stands, and is now stronger.  Everything comes from
 - Note: the committed CSVs and PNGs sit inside the package directory, but
   `package_data` ships only `data/*.json`, so a non-editable install carries
   the code, not the figures and tables.
+
+### 2026-09-29 -- Build #8b: Phase 0a report slides (Opus 5.5)
+
+- Wrote `docs/slides/wiggles_phase0_report.pptx`, 14 slides on a 16:9 wide
+  canvas (13.33 × 7.5 in).  **No text below 20 pt**, tables included; I
+  checked the slide XML, whose minimum `sz` is 2000.  Order:
+  1. title;
+  2. H1 vs H2;
+  3. what 0a built;
+  4. four things the VEIT files taught us;
+  5. the task 5 figure, then 6. its table;
+  7. the task 6 figure, then 8. its table;
+  9. the task 7 figure, then 10. the α₂ callouts, then 11. its table;
+  12. the task 3b template SRF, figure and table;
+  13. the gate G0 status;
+  14. next steps.
+
+  Every slide has speaker notes.
+- The numbers are not hand-typed.  `docs/slides/wiggles_phase0_report_data.py`
+  reads the committed products (`hypernet/wiggles/phase0_veit_{lines,scans,
+  budget}.csv`, `hypernet/data/veit_srf_model.json`) and the figure aspect
+  ratios, and writes `wiggles_phase0_report_data.json`.  Then
+  `docs/slides/build_wiggles_phase0_report.js` (pptxgenjs) builds the deck.
+  Rebuild with:
+
+      python docs/slides/wiggles_phase0_report_data.py
+      NODE_PATH=$(conda run -n slides npm root -g) conda run -n slides node docs/slides/build_wiggles_phase0_report.js
+
+- Tooling: this Mac had no node, LibreOffice, PowerPoint or Keynote.
+  - I created a separate conda env `slides` (nodejs, pptxgenjs installed
+    with `npm -g`, python 3.12, lxml, defusedxml, pillow), leaving `ocean14`
+    untouched.
+  - With JXP's OK I installed LibreOffice with `brew install --cask
+    libreoffice`, for the render QA.
+- QA:
+  - The pptx skill's `validate.py` passes.
+  - I rendered every slide through LibreOffice and inspected it.  Fixes from
+    the first render: the task 3b title wrapped onto the figure (shortened);
+    the table footnotes floated far below the tables (fixed row height,
+    notes placed under the table); the gate cards were too tall; and the
+    "in time" callout became "interpolated".
+  - The embedded figure PNGs keep their own axis labels, which are smaller
+    than 20 pt on the slide.  They are images, not slide text.
+- Design: navy/teal with a coral accent for the key numbers; a circle badge
+  motif (H1/H2, steps 1-4, gate a-c); Cambria headings and Calibri body.
+- `docs/slides/` holds no `.md`, so nothing there is published by Sphinx.

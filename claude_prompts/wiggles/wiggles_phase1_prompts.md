@@ -137,14 +137,14 @@ refinement rather than a requirement and Phase 2 defaults to eq. (14).
    depth at 760.6 nm within a stated range; grid spacing 0.01 nm; cache hit
    reproduces the computed array.  Log your work.
 
-5. **OSOAA smooth fields.**  `wavecal/phase1_osoaa_fields.py`: on a 5 nm grid
+5. **OSOAA smooth fields.**  `hypernet/wiggles/phase1_osoaa_fields.py`: on a 5 nm grid
    380-1000 nm, for SZA 30/50/70°, two aerosol loads and a small
    chlorophyll/sediment grid, run OSOAA and collect direct and diffuse Ed at
    0+, Ld at the HYPSTAR sky geometry (VZA 40°, relative azimuth from the
    VEIT sample) and Lw at 0+.  Run one SZA/aerosol/water case first, time it,
    then the rest in the background.  Save
    `$OS_COLOR/hypernet/wiggles/phase1/osoaa_fields.npz` and a figure
-   `wavecal/figs/phase1/osoaa_fields.png`.  Log your work.
+   `hypernet/wiggles/figs/phase1/osoaa_fields.png`.  Log your work.
 
 6. **Scene composer and ρw library.**  Module per Q&A (default
    `hypernet/twin.py`): `compose_scene(emod, fields, case)` returning
@@ -181,24 +181,24 @@ refinement rather than a requirement and Phase 2 defaults to eq. (14).
 
 ### Analysis
 
-9. **Cases × methods.**  `wavecal/phase1_twin.py`: for every case, SZA,
+9. **Cases × methods.**  `hypernet/wiggles/phase1_twin.py`: for every case, SZA,
    aerosol and water type, and every method, compute ρw on the L grid, then
    ρw'' with h = 1 nm and h = 5 nm second differences as in the paper.
    Metric: rms of ρw'' − ρw''_true within ±5 nm of the ten lines and away
    from them.  Write `$OS_COLOR/hypernet/wiggles/phase1/twin_metrics.parquet`,
-   a committed `wavecal/phase1_twin_metrics.csv`, and figures under
-   `wavecal/figs/phase1/` (ρw'' at O2-A, Hα and Ca H/K per method; the
+   a committed `hypernet/wiggles/phase1_twin_metrics.csv`, and figures under
+   `hypernet/wiggles/figs/phase1/` (ρw'' at O2-A, Hα and Ca H/K per method; the
    reduction per case).  Log your work.
 
 10. **Controls and sensitivity.**  Extend the script: the change in the
     fluorescence and Raman controls' second derivative per method against the
     case (vii) noise floor; degradation curves for (iv), (v) and (vi).
-    Table `wavecal/phase1_controls.csv` and a figure.  Log your work.
+    Table `hypernet/wiggles/phase1_controls.csv` and a figure.  Log your work.
 
 11. **Prediction for Phase 3.**  From case (iii), tabulate the expected
     reduction of the line-region ρw'' excess for `ruddick2023` and `srf` as a
     function of ΔFWHM = FWHM_L − FWHM_E (0 to 1 nm) and line depth -- the
-    number Gate G3 will be judged against.  `wavecal/phase1_prediction.csv`
+    number Gate G3 will be judged against.  `hypernet/wiggles/phase1_prediction.csv`
     and a figure.  Log your work.
 
 ### Gate

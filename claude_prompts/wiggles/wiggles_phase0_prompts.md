@@ -189,6 +189,31 @@ goes into the function first.
 
 8b. **0a interim report slides.**  Create a slideset in `docs/slides/wiggles_phase0_report.pptx` with a description of what you have accomplished so far.  Include the figures and tables from tasks 5-7.  Log your work.  When using text, use no font size smaller than 20pt
 
+8c. **L-channel SRF stability from Release 2 (before the delivery).**  The
+    HYPSTAR L2B files in `$OS_COLOR/WATERHYPERNET/RELEASE_2` (44,589 of them)
+    carry `downwelling_radiance` (Ld), `upwelling_radiance` and `irradiance`
+    on the native 1538-px L grid.  Add an L2B reader to `hypernet/whn_l1a.py`,
+    then `hypernet/wiggles/phase0c_release2_srf.py`: run the HSRS template fit
+    (`srf.fit_template_windows`, veil 0) on Ld for the sequences of
+    `docs/wiggles_data_request.csv` (and optionally a wider sample per
+    instrument × calibration period), and on the L2B `irradiance` with the
+    E-grid linear interpolation built into the model (E grid of 122304 from
+    the VEIT L1A; flag other instruments' E results as provisional).  L2B
+    carries no per-scan data, so state what is used as the per-pixel error.
+    Feed the results through the task 11 stability analysis
+    (`phase0b_stability.py`: FWHM vs SZA, season and time; the recalibration,
+    site and instrument pairs).  Report a preliminary G0(b) for the L channel
+    in Q&A.  Log your work.
+
+8d. **Template-fit refinements on VEIT.**  (i) Model the O₂ and H₂O bands with
+    HAPI in the template fit to fill the 680-850 nm gap; (ii) test a
+    non-Gaussian SRF (Gaussian + Lorentzian, or super-Gaussian) and report
+    the change in χ²_ν; (iii) investigate the additive red component in Lu
+    (task 6: stray light or a dark residual?); (iv) test whether the
+    wavelength-dependent offset trend (−0.02 to −0.09 nm per 100 nm) is
+    significant.  Update `hypernet/data/veit_srf_model.json` only if (i) or
+    (ii) changes it, keeping the previous file.  Log your work.
+
 ### Build (0b, full request -- after the data arrive)
 
 9. **Ingest and index.**  Mirror the delivery with `rclone` to a subfolder of
@@ -1243,3 +1268,19 @@ report.  Item 2 stands, and is now stronger.  Everything comes from
 - Design: navy/teal with a coral accent for the key numbers; a circle badge
   motif (H1/H2, steps 1-4, gate a-c); Cambria headings and Calibri body.
 - `docs/slides/` holds no `.md`, so nothing there is published by Sphinx.
+
+### 2026-10-03 -- Added tasks 8c and 8d; path fixes (Opus 5.5)
+
+- At JXP's request, added two tasks that need no delivery:
+  - 8c: L-channel SRF stability from the Release 2 L2B archive;
+  - 8d: template-fit refinements on VEIT (HAPI bands, non-Gaussian SRF, the
+    Lu red component, the offset trend).
+- Suggested order: 8c, then Phase 1 Setup #1, then 8d.
+- In the Phase 1-3 prompt docs, the planned `wavecal/phase*` scripts, tables
+  and figures now point to `hypernet/wiggles/`.  The Phase 2 module-naming
+  note was updated for the package layout.  References to the existing
+  exploratory scripts (`wavecal/sanity_checks_veit.py`) are unchanged.
+- JXP has installed the package (`pip install -e .`), so the `sys.path`
+  bootstraps in `docs/whn_figures.py` and
+  `docs/slides/wiggles_phase0_report_data.py` are no longer needed (left in
+  place for now).

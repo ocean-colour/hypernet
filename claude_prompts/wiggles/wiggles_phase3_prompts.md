@@ -49,12 +49,12 @@ residual after correction still correlates with Ed''/Ed, the SRF model
   features near lines).
 - **Gate reports and exit check:** `claude_prompts/wiggles/gate_G0.md`,
   `gate_G1.md`, `phase2_exit.md` (locations as confirmed there).  Phase 1's
-  `wavecal/phase1_prediction.csv` is the yardstick for G3.
+  `hypernet/wiggles/phase1_prediction.csv` is the yardstick for G3.
 - **Code (Phases 0-2):** the readers (default `hypernet/whn_l1a.py`), the
   SRF module and `srf_table.csv` / `calibrate_srf`, `interpolate_ed_to_l`
   with `punpy` uncertainties, `emod_for`.  Metric helpers from
   `wavecal/sanity_checks_veit.py` (`hf_power`, `d2`) and
-  `wavecal/phase1_twin.py` (line/away masks, h = 1 and 5 nm second
+  `hypernet/wiggles/phase1_twin.py` (line/away masks, h = 1 and 5 nm second
   differences) should be promoted to a shared module (default
   `hypernet/wiggle_metrics.py`) in task 3 rather than copied.
 - **Data:** the delivered request under `$OS_COLOR/WATERHYPERNET/Wavelengths/`,
@@ -82,14 +82,14 @@ residual after correction still correlates with Ed''/Ed, the SRF model
 1. Read the plan sections, gate reports and code listed in Context, and this
    doc.  Put your questions in Q&A: how many sequences arrived and whether
    any rows of the request are empty, the figure location (proposal
-   `wavecal/figs/phase3/`, copied into `docs/figs/` when the tech note takes
+   `hypernet/wiggles/figs/phase3/`, copied into `docs/figs/` when the tech note takes
    them), the exact recomposition of ρw from L2A terms (task 2), and which
    VEIT_P sequences serve as the control.  Do not run anything yet.  Log
    your work.
 
 ### Analysis
 
-2. **Recompute ρw.**  `wavecal/phase3_recompute.py`: for every indexed
+2. **Recompute ρw.**  `hypernet/wiggles/phase3_recompute.py`: for every indexed
    sequence, Ed_L with the three methods from the mean L1A_IRR (SRF from the
    table or `calibrate_srf` per G0; `emod_for` at the sequence SZA), then
    ρw_method = π Lw / Ed_L with `water_leaving_radiance` from L2A unchanged
@@ -102,41 +102,41 @@ residual after correction still correlates with Ed''/Ed, the SRF model
 3. **Metrics.**  Promote the metric helpers into `hypernet/wiggle_metrics.py`
    (`second_difference(y, wav, h)`, `line_mask(wav, lines, half=5.0)`,
    `rms_in_out(y2, mask)`, `corr_with_ed(rhow2, ed2_over_ed)`) with tests on
-   synthetic input.  `wavecal/phase3_metrics.py`: per sequence and method,
+   synthetic input.  `hypernet/wiggles/phase3_metrics.py`: per sequence and method,
    rms ρw'' within ±5 nm of the ten lines vs away, for h = 1 and 5 nm;
    corr(ρw'', Ed''/Ed) over 400-700 nm; the O2-A and Hα windows separately.
    Table `$OS_COLOR/hypernet/wiggles/phase3/metrics.parquet`, committed
-   summary `wavecal/phase3_metrics.csv` by instrument and water type.  Log
+   summary `hypernet/wiggles/phase3_metrics.csv` by instrument and water type.  Log
    your work.
 
-4. **Feature preservation.**  `wavecal/phase3_features.py`: the 683 nm
+4. **Feature preservation.**  `hypernet/wiggles/phase3_features.py`: the 683 nm
    fluorescence peak (height and ρw'' at 670-700 nm) at VEIT/GAIT and MAFR,
    the pure-water absorption shoulders above 600 nm, and the smoothness floor
    (rms ρw'' away from lines must not fall below the `linear` value).  Table
-   `wavecal/phase3_features.csv` and a figure.  Log your work.
+   `hypernet/wiggles/phase3_features.csv` and a figure.  Log your work.
 
-5. **Ring check.**  `wavecal/phase3_ring.py`: for the `srf` residual at each
+5. **Ring check.**  `hypernet/wiggles/phase3_ring.py`: for the `srf` residual at each
    line (ρw'' excess after correction), regress against ρ_f·Ld/Lu per
    sequence and line.  A significant positive slope means the Ring effect is
    in the residual; report it, do not model it (plan §9 -- model only if it
    scales).  Table and figure.  Log your work.
 
-6. **PANTHYR cross-system control.**  `wavecal/phase3_panthyr.py`: from the
+6. **PANTHYR cross-system control.**  `hypernet/wiggles/phase3_panthyr.py`: from the
    local RELEASE_2 archive, take VEIT_P L2 spectra nearest in time to the
    VEIT_H requested sequences (same day, within one hour when possible),
    compute the same ρw'' metrics on the ~10 nm-FWHM TriOS data, and compare
    with VEIT_H before and after correction.  Table
-   `wavecal/phase3_panthyr.csv` and a figure.  Log your work.
+   `hypernet/wiggles/phase3_panthyr.csv` and a figure.  Log your work.
 
-7. **Measured vs predicted reduction.**  `wavecal/phase3_vs_prediction.py`:
+7. **Measured vs predicted reduction.**  `hypernet/wiggles/phase3_vs_prediction.py`:
    per instrument, the measured reduction of the line-region ρw'' excess for
    `ruddick2023` and `srf` against the Phase 1 prediction at that
    instrument's ΔFWHM(λ) and line depths; the residual correlation with
-   Ed''/Ed after correction.  Table `wavecal/phase3_vs_prediction.csv` and
+   Ed''/Ed after correction.  Table `hypernet/wiggles/phase3_vs_prediction.csv` and
    a figure.  Log your work.
 
-8. **Figure set for the tech note.**  `wavecal/phase3_figures.py` writing
-   under `wavecal/figs/phase3/`: ρw and ρw'' before/after for one clear, one
+8. **Figure set for the tech note.**  `hypernet/wiggles/phase3_figures.py` writing
+   under `hypernet/wiggles/figs/phase3/`: ρw and ρw'' before/after for one clear, one
    dark and one turbid sequence (paper Fig. 4-6 style); the by-instrument
    summary; the 683 nm control; the PANTHYR comparison.  Log your work.
 

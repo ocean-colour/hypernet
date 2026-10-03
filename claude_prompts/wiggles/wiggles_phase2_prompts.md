@@ -74,10 +74,12 @@ wavelength recalibration or not, default method).
   G1 (default method).  If the full data have not arrived, G0 is provisional
   on the VEIT sample: build both the table loader and the self-calibration
   path, and leave the default to be set when G0 closes.
-- Module naming: the top-level `wavecal/` (scripts) means `hypernet/wavecal/`
-  from the plan would be confusing.  Options: keep the flat modules from
-  Phases 0-1 (`hypernet/srf.py`, `hypernet/emod.py`, `hypernet/edinterp.py`)
-  or gather them in `hypernet/wiggles/`.  JXP decides in Setup Q&A.
+- Module naming: since 2026-09-29 the phase scripts live in the subpackage
+  `hypernet/wiggles/` (run as `python -m hypernet.wiggles.<script>`), and the
+  reusable code in flat modules (`hypernet/srf.py`, `hypernet/whn_l1a.py`,
+  `hypernet/whn_srf.py`, `hypernet/refspec.py`; Phase 1 adds e.g.
+  `hypernet/emod.py`).  Whether the Phase 2 function (`interpolate_ed_to_l`)
+  goes in a flat module or in `hypernet/wiggles/` is JXP's call in Setup Q&A.
 
 ## Prompts
 
@@ -127,7 +129,7 @@ wavelength recalibration or not, default method).
 
 6. **Per-instrument SRF table.**  A committed `hypernet/data/srf_table.csv`
    (instrument, channel, cal period, quadratic coefficients, centroid offset,
-   uncertainties, n_sequences) written by `wavecal/phase2_srf_table.py` from
+   uncertainties, n_sequences) written by `hypernet/wiggles/phase2_srf_table.py` from
    Phase 0b's `srf_models.parquet` (or from the VEIT sample alone if the data
    have not arrived, flagged as provisional), with `load_srf_table()` and
    `srf_for(instrument, channel, date)`.  If G0(b) failed, the default path
@@ -153,12 +155,12 @@ wavelength recalibration or not, default method).
    runs it on the Phase 1 synthetic scene.  A short module docstring says
    what RBINS must wire up; no end-to-end processor run.  Log your work.
 
-9. **VEIT consistency check.**  `wavecal/phase2_veit_check.py`: run the
+9. **VEIT consistency check.**  `hypernet/wiggles/phase2_veit_check.py`: run the
    three methods on the VEIT L1A_IRR with the sample's SRF models; confirm
    `linear` reproduces the L1C `irradiance` to the 2 × 10⁻⁵ of plan §2.3, and
    show Ld/Ed_L for the three methods with their `u_rel_*` bands.  Figure
-   `wavecal/figs/phase2/veit_three_methods.png`; table
-   `wavecal/phase2_veit_check.csv`.  Log your work.
+   `hypernet/wiggles/figs/phase2/veit_three_methods.png`; table
+   `hypernet/wiggles/phase2_veit_check.csv`.  Log your work.
 
 ### Gate
 

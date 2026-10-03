@@ -304,3 +304,19 @@ def test_template_fit_on_hsrs():
     assert r['ok']
     assert r['sigma'] == pytest.approx(sig, abs=0.01)
     assert r['dlam'] == pytest.approx(dl, abs=0.01)
+
+
+def test_template_fit_via_grid():
+    """A spectrum observed on one grid and np.interp'd onto another is fitted
+    without bias when the resampling is modelled (via_grid)."""
+    rw, rf = _fake_reference()
+    gE = np.arange(380.0, 900.0, 0.47) + 0.21                 # native 'E' grid
+    gL = WAV[(WAV > 470) & (WAV < 530)]                        # output 'L' grid
+    sig, dl = 0.95, 0.04
+    yE = srf.convolve_gaussian(rw, rf, gE - dl, sig)
+    y = np.interp(gL, gE, yE)
+    e = np.full_like(gL, 1e-4)
+    r = srf.fit_srf_template(gL, y, rw, rf, 490.0, 500.0, err=e, veil=False, via_grid=gE)
+    assert r['ok']
+    assert r['sigma'] == pytest.approx(sig, abs=0.01)
+    assert r['dlam'] == pytest.approx(dl, abs=0.01)

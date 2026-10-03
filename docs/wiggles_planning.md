@@ -45,8 +45,7 @@ technical note (option (c) in our earlier exchange).
 
 **What we need from Kevin:** L1A_IRR, L1A_RAD, L1C_ALL and L2A_REF for the
 sequences listed in {download}`wiggles_data_request.csv <wiggles_data_request.csv>`
-(150 primary + 74 spares over five sites and seven instruments, with a `sky`
-column for him to fill), the RAD and IRR calibration files for those seven
+(150 primary + 74 spares over five sites and seven instruments), the RAD and IRR calibration files for those seven
 instruments (both versions for the two recalibrated ones), any laboratory
 line-spread or SRF data, and the processor version that produced Release 2.
 Phases 0 (on the VEIT sample) and 1 (no data needed) start before the data
@@ -206,8 +205,8 @@ stability, from the data themselves.
 - Line depths in Ld are affected by rotational-Raman filling-in (the Ring
   effect); widths much less so. We fit widths and centroids and treat depths
   as diagnostic only.
-- Stability: FWHM(λ) and centroid offset vs SZA, sky condition (Kevin's `sky`
-  tag), season and time, and across the recalibrations of 122304 and 121222.
+- Stability: FWHM(λ) and centroid offset vs SZA, sky condition, season and
+  time, and across the recalibrations of 122304 and 121222.
   Same-instrument-two-sites (122302 at BEFR then THFR) and two-instruments-one-
   site (VEIT, GAIT, MAFR) separate site from instrument effects.
 - Error budget: the ρw'' wiggle power at each line decomposed into the H1
@@ -324,10 +323,16 @@ site, instrument, cal_dates_rad_irr, sequence_time, azimuth, sza, sky, file`).
 Sequences were drawn from the Release 2 L2 archive within each
 site × instrument × calibration period, spread over SZA tertiles (SZA ≤ 75°)
 and month; the instrument id and SZA were read from each file. Each row has N
-primary picks plus N/2 spares. **We ask Kevin to fill the `sky` column
-(clear / overcast / broken) and to swap in spares where a primary is
-unsuitable** — L2 files do not tell us the sky condition, and Phase 0 needs
-clear and overcast cases across SZA.
+primary picks plus N/2 spares. **We ask Kevin to swap in spares where a
+primary is unsuitable.** The `sky` column is filled by us, not Kevin, from
+the sky index Ld(750)/Ed(750) that Kevin recommended (Ruddick et al. 2006,
+eqs. 23–24): below 0.05 sr⁻¹ is clear sky, and higher values mean cloud in
+the sky-viewing or sun direction. It can be computed from the Release 2 files
+we already hold. Over the 224 candidates, the 10th, 50th and 90th
+percentiles are 0.013, 0.024 and 0.114 sr⁻¹, and 78 % are clear. The
+clear-sky value does not vary with SZA, and every SZA tertile includes
+cloudy cases. Partly cloudy skies, which the 0.05 switch does not resolve,
+are flagged from the scan-to-scan variability of Ed in L1A.
 
 | row | site | instrument | cal (RAD/IRR) | primary + spare | SZA | months | rationale |
 |---|---|---|---|---:|---:|---:|---|
@@ -411,7 +416,7 @@ than by that attribute, and would welcome confirmation of the RAD file names.
 
 | weeks | activity | depends on |
 |---|---|---|
-| 0 | send this plan and the CSV to Kevin; Kevin fills `sky`, swaps spares | — |
+| 0 | send this plan and the CSV to Kevin; Kevin swaps spares; we compute the sky index | — |
 | 0–1 | Phase 1 task 0: build OSOAA, `hypernet/rt/osoaa.py`, Level check | gfortran (present) |
 | 0–2 | Phase 0 on the VEIT sample: SRF fitting code, FWHM(λ) model, unit tests | VEIT sample (in hand) |
 | 1–4 | Phase 1 twin experiment; gate G1 | task 0 |
@@ -489,6 +494,10 @@ the same amount. A separate prompt document will drive the Phase 0/1 work.
   Wilzewski, J. S. (2016), "HITRAN Application Programming Interface (HAPI): a
   comprehensive approach to working with spectroscopic data", *J. Quant.
   Spectrosc. Radiat. Transfer* 177, 15–30.
+- Ruddick, K. G., De Cauwer, V., Park, Y.-J. & Moore, G. (2006), "Seaborne
+  measurements of near infrared water-leaving reflectance: the similarity
+  spectrum for turbid waters", *Limnol. Oceanogr.* 51(2), 1167–1179
+  (`context/papers/ruddick2006.pdf`).
 - Ruddick, K. G., De Vis, P., Goyens, C., Kuusk, J., Lavigne, H. &
   Vanhellemont, Q. (2023), "Second derivative water reflectance spectra for
   phytoplankton species detection — origin, impact and removal of spectral

@@ -140,11 +140,14 @@ refinement rather than a requirement and Phase 2 defaults to eq. (14).
 5. **OSOAA smooth fields.**  `hypernet/wiggles/phase1_osoaa_fields.py`: on a 5 nm grid
    380-1000 nm, for SZA 30/50/70°, two aerosol loads and a small
    chlorophyll/sediment grid, run OSOAA and collect direct and diffuse Ed at
-   0+, Ld at the HYPSTAR sky geometry (VZA 40°, relative azimuth from the
-   VEIT sample) and Lw at 0+.  Run one SZA/aerosol/water case first, time it,
+   0+, Ld at the HYPSTAR sky geometry (VZA 40°, relative azimuth 90°: the VEIT
+   sample and all 224 requested sequences) and Lw at 0+.  Run one SZA/aerosol/water case first, time it,
    then the rest in the background.  Save
    `$OS_COLOR/hypernet/wiggles/phase1/osoaa_fields.npz` and a figure
-   `hypernet/wiggles/figs/phase1/osoaa_fields.png`.  Log your work.
+   `hypernet/wiggles/figs/phase1/osoaa_fields.png`.  As a check, compare
+   the modelled clear-sky Ld(750)/Ed(750) with the observed clear floor of
+   the sky index (0.011-0.015 sr⁻¹ at every SZA; Phase 0 Context → Sky
+   index).  Log your work.
 
 6. **Scene composer and ρw library.**  Module per Q&A (default
    `hypernet/twin.py`): `compose_scene(emod, fields, case)` returning

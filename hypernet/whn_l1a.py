@@ -380,6 +380,40 @@ def load_l2a(path):
     return _load_l1c_l2a(path, extra=_L2A_EXTRA)
 
 
+def load_l2b(path):
+    """Read a Release 2 L2B_REF file.
+
+    In Release 2, L2B files carry the same variables as L2A (``product_level``
+    is even ``W_L2A``): the sequence-mean ``downwelling_radiance`` (Ld),
+    ``upwelling_radiance``, ``irradiance`` (E resampled onto the L grid),
+    ``water_leaving_radiance`` and the reflectances, on the native L grid, with
+    ``n_valid_scans`` but no per-scan spectra.  See :func:`load_l2a`.
+    """
+    return _load_l1c_l2a(path, extra=_L2A_EXTRA)
+
+
+def release2_path(site, sequence_time, filename, root=None):
+    """Path of a Release 2 file: ``RELEASE_2/<site>/<YYYY>/<MM>/<DD>/<filename>``.
+
+    Parameters
+    ----------
+    site : str
+        Site with suffix, e.g. ``'VEIT_H'``.
+    sequence_time : str
+        ``'YYYYMMDDTHHMM'``.
+    filename : str
+        Basename, e.g. from the ``file`` column of the data request.
+    root : str, optional
+        The ``RELEASE_2`` directory; default
+        :func:`hypernet.whn_explore.whn_root`.
+    """
+    if root is None:
+        from hypernet.whn_explore import whn_root
+        root = whn_root()
+    t = sequence_time
+    return os.path.join(root, site, t[:4], t[4:6], t[6:8], filename)
+
+
 def check_against_l1c(irr, rad, l1c, wmin=400.0, wmax=900.0):
     """Compare the L1A readers' products with the processor's L1C.
 

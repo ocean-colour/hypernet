@@ -148,3 +148,30 @@ def test_sequence_table_and_match_request():
                   '20260604T0845': 'extra'}
     befr = m[m['sequence_time'] == '20230625T1015'].iloc[0]
     assert befr['azimuth_ok'] == False and not befr['complete']  # noqa: E712  (270 != 090)
+
+
+def test_release2_path():
+    p = wl.release2_path('VEIT_H', '20250812T0630', 'X.nc', root='/r')
+    assert p == '/r/VEIT_H/2025/08/12/X.nc'
+
+
+def _release2_file():
+    import pandas as pd
+    import os
+    try:
+        r = pd.read_csv(os.path.join(os.path.dirname(__file__), '..', '..', 'docs',
+                                     'wiggles_data_request.csv'), dtype=str)
+        row = r[r['row'] == 'VEIT 122304 post-recal'].iloc[0]
+        p = wl.release2_path(row['site'], row['sequence_time'], row['file'])
+        return p if os.path.exists(p) else None
+    except Exception:
+        return None
+
+
+@pytest.mark.skipif(_release2_file() is None, reason='requires the Release 2 archive')
+def test_load_l2b_release2():
+    d = wl.load_l2b(_release2_file())
+    assert d['meta']['system_id'] == 'HYPSTAR_122304'
+    assert d['downwelling_radiance'].shape == (1538, 1)
+    assert d['irradiance'].shape == (1538, 1)
+    assert int(d['n_valid_scans'][0]) > 0

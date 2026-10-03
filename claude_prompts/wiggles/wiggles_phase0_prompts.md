@@ -11,7 +11,7 @@ repeats it over the ~150 requested sequences once the L1A data arrive.
 
 **Gate G0** (plan §4): (a) if FWHM_E(λ) = FWHM_L(λ) within the fit uncertainty
 on most instruments, H2 is dropped and eq. (14) suffices; (b) if the SRFs are
-stable per instrument (spread across SZA, sky and season below ~0.2 nm, no
+stable per instrument (spread across SZA, sky index and season below ~0.2 nm, no
 unexplained jump at recalibration), Phase 2 ships a per-instrument SRF table,
 otherwise Phase 2 must self-calibrate per sequence; (c) if centroid offsets
 exceed ~0.1 nm systematically on some instrument, a wavelength recalibration
@@ -77,7 +77,9 @@ goes into the function first.
     `reflectance`, `reflectance_nosc`.
   - Full request: `docs/wiggles_data_request.csv` (224 rows; columns `row,
     priority, optional, site, instrument, cal_dates_rad_irr, sequence_time,
-    azimuth, sza, sky, file`).  **Not yet delivered.**  Expected as
+    azimuth, sza, sky, file`).  The `sky` column is blank: Kevin did not
+    fill it and we no longer ask him to; we compute it ourselves (task 8e,
+    sky index below).  **Not yet delivered.**  Expected as
     L1A_IRR/L1A_RAD/L1C_ALL/L2A_REF per sequence plus the cal files
     `HYPERNETS_CAL_HYPSTAR_*_{RAD,IRR}_v2.3.nc`, mirrored from
     `AIOcean:data/Color/WATERHYPERNET/Wavelengths/` (rclone) to
@@ -85,6 +87,33 @@ goes into the function first.
   - `$OS_COLOR/hypernet/wavecal/instrument_timeline.csv` -- instrument periods.
   - `$OS_COLOR/WATERHYPERNET/RELEASE_2` -- L2A/L2B only; no L1A.
 - **Paper:** `context/papers/ruddick2023.pdf`.
+- **Sky index** (Kevin, 2026-10; Ruddick et al. 2006, `context/papers/ruddick2006.pdf`,
+  eqs. 23-24, p. 1173): `ld_ed_750` = Ld(750)/Ed(750) in sr⁻¹, the ratio of
+  the 745-755 nm means of the sky radiance (vza ≥ 90) and Ed.  Low = blue sky,
+  high = cloud in the sky-view or sun direction; ~0.02 clear (Mobley 1999),
+  ~0.3 overcast (isotropic sky = 1/π).  The paper uses 0.05 as the
+  clear/cloudy switch for ρ_sky; Kevin recommends the same threshold.  Its
+  ρ(wind) formula (eq. 23) is obsolete and is **not** used here; the index
+  itself involves no ρ.  The paper says neither branch suits partly cloudy
+  skies and drops them, so 0.05 does not detect broken cloud, and we add
+  the within-sequence Ed scan CV at 750 nm (`ed_cv_750`) for that.
+  - Computable from L1A (per scan), L1C_ALL, L2A_REF and the Release 2 L2B
+    (`downwelling_radiance` / `irradiance`); no input from Kevin needed.
+    Exploratory scripts: `wavecal/ld_ed_750_veit.py` and
+    `wavecal/ld_ed_750_request.py`
+    (→ `$OS_COLOR/hypernet/wavecal/ld_ed_750_request.csv`).
+  - VEIT sample (SZA 36.7°): 0.0270 (L1A), 0.0269 (L1C/L2A); the two sky
+    series give 0.0251 and 0.0289; Ed CV 0.46 %.
+  - The 224 requested sequences (L2B): 10/50/90 % quantiles 0.013 / 0.024 /
+    0.114, max 0.313; 78 % below 0.05.  All are at relative azimuth 90°
+    (Ruddick et al. 2006 used 135°).  The clear floor (10th percentile) is
+    flat with SZA, 0.011-0.015 in every bin; corr(ratio, 1/cos SZA) = −0.09
+    in the clear subset.  So one SZA-independent threshold is fine.  The
+    floor varies by site (MAFR 0.010, BEFR 0.015), reflecting aerosol.
+  - Classes (defaults, JXP to confirm): `clear` < 0.05; `cloudy`
+    0.05-0.25; `overcast` ≥ 0.25; `broken` overrides any of them when
+    `ed_cv_750` > 2 % (L1A only; the L2B value is NaN).  Analyses regress on
+    the continuous `ld_ed_750`; the classes are for plots and group means.
 
 ### Dependencies
 
@@ -205,6 +234,17 @@ goes into the function first.
     site and instrument pairs).  Report a preliminary G0(b) for the L channel
     in Q&A.  Log your work.
 
+8e. **ρw wiggles by instrument class, from Release 2 (Q&A Q12).**
+    `hypernet/wiggles/phase0e_release2_wiggles.py`: for the 224 requested L2B
+    files, measure the ρw wiggle at the Fraunhofer lines (the site's agreed
+    product via `whn_explore.product_for`): the relative residual within
+    ±5 nm of each line (task 7's metric) and the ρw'' excess (task 12's),
+    plus each sequence's H2 prediction from its own E and Ld line fits.
+    Compare the narrow-E instruments (122302, 122304, 120242) with the E ≈ L
+    ones (121222, 121231, 122303, 122305), and the same-site pairs (VEIT
+    122304 vs 122305, GAIT 120242 vs 121222).  Table and figure; summarise
+    in Q&A.  Log your work.
+
 8d. **Template-fit refinements on VEIT.**  (i) Model the O₂ and H₂O bands with
     HAPI in the template fit to fill the 680-850 nm gap; (ii) test a
     non-Gaussian SRF (Gaussian + Lorentzian, or super-Gaussian) and report
@@ -214,13 +254,32 @@ goes into the function first.
     significant.  Update `hypernet/data/veit_srf_model.json` only if (i) or
     (ii) changes it, keeping the previous file.  Log your work.
 
+8e. **Sky index (before the delivery).**  Add `sky_index(...)` to
+    `hypernet/whn_l1a.py`, working from an L1A pair (per-scan Ld and E, giving
+    `ld_ed_750`, `ed_cv_750`, and the ratio from each of the two sky series)
+    and from an L1C/L2A/L2B file (giving `ld_ed_750` only), plus
+    `sky_class(ld_ed_750, ed_cv_750)` with the thresholds under Context → Sky
+    index.  Promote `wavecal/ld_ed_750_request.py` to
+    `hypernet/wiggles/phase0_sky.py`, which writes
+    `hypernet/wiggles/phase0_sky_index.csv` (request row, site,
+    sequence_time, azimuth, sza, `ld_ed_750`, `sky`) from the Release 2 L2B
+    files.  Leave `docs/wiggles_data_request.csv` as sent.  Then update the
+    existing 0b scripts: `phase0b_index.py` takes `ld_ed_750`/`ed_cv_750`/`sky`
+    from the delivered L1A (the L2B value as fallback), and replaces the
+    `n_sky_tagged` count with per-class counts; `phase0b_stability.py` adds
+    slopes against `ld_ed_750`, and its markers cover all four classes.  Add
+    tests: VEIT reproduces 0.0270 (Tier 2) and the class boundaries (Tier 1).
+    Report the class counts per request row in Q&A, and whether every
+    instrument has clear and cloudy cases across SZA.  Log your work.
+
 ### Build (0b, full request -- after the data arrive)
 
 9. **Ingest and index.**  Mirror the delivery with `rclone` to a subfolder of
    `$OS_COLOR/WATERHYPERNET/Wavelengths/` (name per the delivery).
    `hypernet/wiggles/phase0b_index.py`: match every L1A/L1C/L2A file to a row of
    `docs/wiggles_data_request.csv` by site, `sequence_time` and azimuth,
-   carry `instrument`, `sza`, `sky` and the cal period, record which
+   carry `instrument`, `sza`, the cal period and the sky index of task 8e
+   (`ld_ed_750`, `ed_cv_750`, `sky`, from the delivered L1A), record which
    requested sequences are missing and which spares were substituted, and
    check the `instrument_calibration_file_rad` attribute bug.  Write
    `$OS_COLOR/hypernet/wiggles/phase0/request_index.parquet` and a committed
@@ -235,7 +294,8 @@ goes into the function first.
     your work.
 
 11. **Stability.**  `hypernet/wiggles/phase0b_stability.py`: FWHM(λ) at 400, 500, 600,
-    700 nm and the centroid offset (L − E) versus SZA, `sky`, month and time,
+    700 nm and the centroid offset (L − E) versus SZA, `ld_ed_750` (and
+    by `sky` class), month and time,
     per instrument; the spread per instrument against the 0.2 nm criterion;
     122304 and 121222 before/after recalibration; 122302 at BEFR vs THFR
     (site vs instrument); the two-instruments-one-site pairs at VEIT, GAIT and
@@ -645,6 +705,155 @@ report.  Item 2 stands, and is now stronger.  Everything comes from
     660-680 nm).
   - A direct test of the SRF shape (e.g. a Gaussian + Lorentzian SRF) is a
     possible extension, not yet done.
+
+### Build #8c -- 2026-10-03 (Opus 5.5): SRF stability from Release 2, preliminary G0(b)
+
+Source: the 224 requested sequences (150 primary + 74 spare), read from
+their Release 2 L2B files.  Each was fitted with the HSRS template (10 nm
+windows, veil 0): Ld directly, and E (`irradiance`) through a model of the
+processor's E-grid → L-grid resampling.  The script is
+`python -m hypernet.wiggles.phase0c_release2_srf`, and the tables are
+`hypernet/wiggles/phase0c_{summary,stability,stability_pairs,stability_trends,validation}.csv`.
+224/224 fitted.
+
+**Caveats first.**
+- L2B has no per-scan data and no per-pixel error for Ld or E, so the fits
+  are unweighted and their covariance is scaled by the residuals.
+- Only 122304's E grid is known, from the VEIT L1A; every other E uses it as
+  a proxy.
+- Validation on the VEIT sample: the L2 route matches the L1A template fits
+  to ≤ 0.07 nm for Ld, but reads E 0.03-0.12 nm wider.  The resampling model
+  removes about 0.03 nm of that; the rest is weighting, at 1-2σ.  So
+  absolute E widths carry about +0.1 nm of systematic error, common to all
+  sequences.
+- Sky is untagged; Kevin has the column.
+
+**1. The SRFs are stable (G0(b), preliminary: passes).**  Within every
+instrument × calibration period, the std of FWHM over the sequences at
+400-700 nm is 0.01-0.06 nm for both E and Ld, against the 0.2 nm criterion.
+The groups have 9-60 sequences each, spanning SZA 21-74° and up to 12 months.
+- Trends with SZA are ≤ 0.002 nm/deg, i.e. ≤ 0.1 nm over 50°, and mostly
+  not significant.
+- Trends with season and year are all ≲ 0.05 nm.  The exception is
+  120242's Ld at −0.3 ± 0.08 nm per year, but that rests on 9 sequences over
+  4 months.
+- **Recalibration:**
+  - 122304: E +0.03 nm, Ld 0.00 nm; the L − E centroid moves +0.034 nm.
+  - 121222: E −0.03 nm, Ld +0.01 nm.
+
+  Both are statistically detectable (3-9σ) but small against 0.2 nm.
+- **Site vs instrument:** 122302 at BEFR vs THFR agrees to ≤ 0.012 nm in
+  every quantity.  The SRF belongs to the instrument, not the site.
+- So **Phase 2 can ship a per-instrument SRF table**, pending the L1A
+  confirmation of E with the true E grids.
+
+**2. E ≠ L depends on the instrument.**  This sharpens G0(a).
+FWHM_Ld − FWHM_E at 450 nm, by instrument (calibration period):
+
+  | instrument (cal) | site | n | FWHM_E 450 | FWHM_Ld 450 | Ld − E |
+  |---|---|---:|---:|---:|---:|
+  | 122304 (2023-01) | VEIT | 30 | 2.33 | 2.81 | **+0.48** |
+  | 122304 (2024-11) | VEIT | 30 | 2.36 | 2.82 | **+0.46** |
+  | 122302 (2023-01) | BEFR, THFR | 60 | 2.21 | 2.73 | **+0.52** |
+  | 120242 (2024-11) | GAIT | 9 | 2.16 | 2.69 | **+0.53** |
+  | 122305 (2023-01) | VEIT | 30 | 2.70 | 2.77 | +0.07 |
+  | 121231 (2021-10) | MAFR | 33 | 2.86 | 2.90 | +0.04 |
+  | 122303 (2023-01) | MAFR | 12 | 2.75 | 2.74 | −0.01 |
+  | 121222 (2021-10 / 2025-03) | GAIT | 10 + 10 | 2.76 / 2.73 | 2.73 / 2.74 | −0.03 / 0.00 |
+
+  - Four of the seven instruments have L ≈ E, to within 0.07 nm.  Three
+    (122302, 122304, 120242) have an E channel ~0.5 nm *narrower* than L.
+  - Ld is 2.7-2.9 nm on every instrument; the difference lies in E, which
+    is ~2.2-2.4 nm on the three and ~2.7-2.9 nm on the rest.
+  - The pattern is not the instruments' age (the 1222xx and 1202xx serials
+    split both ways).  Kevin may know what differs: the irradiance
+    fore-optics or diffuser, or the fibre/slit configuration.
+  - **G0(a):** H2 cannot be dropped network-wide.  It matters on 122302,
+    122304 and 120242, and is negligible on the others.  The VEIT sample
+    happened to come from one of the affected instruments.
+  - Prediction: the wiggles in ρw should be much stronger on 122302 (BEFR,
+    THFR: the dark sites, where Ed-borne wiggles dominate), 122304 and
+    120242 than on 121222, 121231, 122303 and 122305.  This is testable now
+    on the Release 2 L2 ρw.
+- **3. The absolute wavelength scale is air, and within 0.1 nm (G0(c)).**
+  Against HSRS in air, the per-instrument mean offsets are −0.03 to +0.04 nm
+  for E and −0.00 to +0.07 nm for Ld, with scatter 0.01-0.04 nm.  On a
+  vacuum scale every one would sit at about −0.15 nm.  The relative Ld − E
+  offset is +0.007 to +0.047 nm.  So G0(c) passes on all instruments, and
+  the air/vacuum question to Kevin is answered by the data (still worth his
+  confirmation).
+- **Implications.**
+  - Phase 1 should run with both an "E ≈ L" and an "E narrower by 0.5 nm"
+    instrument.
+  - Phase 2's correction is needed for the narrow-E instruments, and is
+    nearly a no-op for the rest (where Kevin's eq. 14 / H1 is the remaining
+    term).
+  - Phase 3 can be planned as a natural experiment: narrow-E vs E ≈ L
+    instruments, at the same site (VEIT 122304 vs 122305; GAIT 120242 vs
+    121222).
+
+**Question 12 -- ρw wiggle check on Release 2 now?**  The archive can test
+the instrument split directly.  ρw'' at the Fraunhofer lines (the task 12
+excess metric) should be ~5× larger on 122302/122304/120242 than on the
+E ≈ L instruments.
+*Default: add a short task 8e to compute the line ρw'' excess per sequence
+for the 224 requested L2B files and compare by instrument, before Phase 1
+Setup.  It is cheap, reuses `phase0b_budget.rho2_baseline`, and would be a
+strong, independent check of H2.*
+>A. Yes, use your default
+
+### Build #8e -- 2026-10-03 (Opus 5.5): ρw wiggles follow the E/L SRF mismatch
+
+Source: the same 224 Release 2 L2B files, with each site's agreed ρw
+product.  The script is `python -m hypernet.wiggles.phase0e_release2_wiggles`,
+and the tables are
+`hypernet/wiggles/phase0e_{wiggles,summary,pairs,pairs_by_line,lines_by_class}.csv`
+(figure `figs/phase0/phase0e_wiggles.png`).  The metric is the rms relative
+residual of ρw within ±5 nm of each line (task 7's metric).  Each
+sequence's H2 prediction comes from its own E and Ld line fits.
+
+- **By class, per line** (median rms; narrow-E = 122302/122304/120242,
+  E ≈ L = 121222/121231/122303/122305):
+
+  | line | E ≈ L | narrow-E | ratio | H2 predicted (narrow-E) | narrow-E excess over E ≈ L |
+  |---|---:|---:|---:|---:|---:|
+  | Ca H/K | 0.0182 | 0.0445 | 2.4 | 0.0305 | 0.0407 |
+  | G band | 0.0072 | 0.0223 | 3.1 | 0.0156 | 0.0211 |
+  | Hβ | 0.0052 | 0.0118 | 2.3 | 0.0074 | 0.0106 |
+  | Mg b | 0.0069 | 0.0111 | 1.6 | 0.0057 | 0.0088 |
+  | Na D | 0.0094 | 0.0085 | 0.9 | 0.0046 | 0 |
+  | Hα | 0.0111 | 0.0149 | 1.3 | 0.0046 | 0.0099 |
+
+  The excess is the quadrature difference.  It sits exactly where H2
+  predicts it, largest at Ca H/K and the G band, with about the predicted
+  size (1.2-1.4× the H2 rms).  At Na D, where H2 is small and the E ≈ L
+  floor is already larger, there is none.
+- **Same site, same water** (ratio of median rms, narrow-E / E ≈ L):
+  - VEIT 122304 / 122305: G band 2.5, Ca H/K 1.6, Hβ 1.2, Mg b 1.0, Na D 0.9,
+    Hα 0.9.
+  - GAIT 120242 / 121222: G band 3.1, Ca H/K 2.7, Hβ 1.7, Mg b 1.4, Na D 0.8,
+    Hα 1.1.
+  - Control, MAFR 121231 / 122303 (both E ≈ L): 0.5-0.8 at every line.
+    That is a uniform, broadband instrument difference, with no line
+    selectivity.
+  - So instruments do differ by up to ~×1.7 overall.  But only the narrow-E
+    instruments show the **line-selective** excess (G band ≫ Na D) that H2
+    predicts.
+- **α₂ (the fraction of the H2 profile present in ρw, median over the
+  sequences):** 1.19 for narrow-E (1.47 / 1.01 / 1.02 for 122302 / 122304 /
+  120242).  For E ≈ L it is −0.2 to −0.7, but there the H2 profile is tiny
+  and α₂ is undefined in practice.
+- **Not H2: the floor.**  The E ≈ L instruments still have ρw line residuals
+  of 0.5-2 % (Ca H/K 1.8 %), well above their H2 prediction (0.1-0.9 %).
+  Candidates are H1, the Ring effect, real ρw structure, Lu-side effects, or
+  the empirical-fit H2 prediction under-predicting.  VEIT 122305 in
+  particular shows a wide spread (0.006-0.027).  Phase 1 and Phase 3 should
+  account for this floor, not only H2.
+- **Verdict.**  An independent test (different instruments, the archive
+  rather than the one sample) confirms that H2 drives the line wiggles in ρw
+  on the narrow-E instruments, at about the predicted amplitude.  On the
+  E ≈ L instruments H2 is negligible, and a smaller line-wiggle floor
+  remains to be explained.
 
 ## Logs
 
@@ -1284,3 +1493,57 @@ report.  Item 2 stands, and is now stronger.  Everything comes from
   bootstraps in `docs/whn_figures.py` and
   `docs/slides/wiggles_phase0_report_data.py` are no longer needed (left in
   place for now).
+
+### 2026-10-03 -- Build #8c (Opus 5.5)
+
+- No new JXP answers.  Did task 8c; the results and Q12 are in the Q&A.
+- `hypernet/srf.py`: `fit_srf_template(..., via_grid=None)` evaluates the
+  model on a native grid and `np.interp`s it onto the output grid, as the
+  processor resamples E; `fit_template_windows` passes it through.  Test:
+  `test_template_fit_via_grid`.
+- `hypernet/whn_l1a.py`: added `load_l2b()` and `release2_path(site,
+  sequence_time, filename)`.  In Release 2, L2B files carry the same
+  variables as L2A (`product_level` = `W_L2A`).  Tests: `test_release2_path`
+  and `test_load_l2b_release2` (Tier 2).
+- `hypernet/wiggles/phase0b_stability.py`: `figures()` takes `prefix` and
+  `label`; I also fixed the legend/title overlap.
+- New `hypernet/wiggles/phase0c_release2_srf.py`, with modes `--validate`,
+  `--limit N` and `--from-parquet`.
+  - It writes `release2_{template,models}.parquet` and `release2_status.csv`
+    under `$OS_COLOR/hypernet/wiggles/phase0/`.
+  - Committed CSVs: `phase0c_{validation,summary,stability,stability_pairs,stability_trends}.csv`.
+  - Figures: `figs/phase0/phase0c_fwhm_by_instrument.png` and
+    `phase0c_stability_vs_{sza,time}.png`.
+  - The full run takes a few minutes.
+- Validation (VEIT, L2 route vs L1A): Ld agrees to ≤ 0.07 nm; E reads
+  +0.03 to +0.12 nm wide (+0.06 to +0.14 nm without the resampling model).
+- Results:
+  - every instrument × calibration group passes the 0.2 nm stability
+    criterion (std 0.01-0.06 nm);
+  - the recalibration and site effects are ≤ 0.03 nm;
+  - **E ≠ L on 3 of 7 instruments only** (122302, 122304, 120242: Ld − E
+    ≈ 0.5 nm), and E ≈ L on 121222, 121231, 122303 and 122305;
+  - the absolute offsets are within 0.07 nm on the air scale, for every
+    instrument.
+- `pytest -q`: 58 passed.
+
+### 2026-10-03 -- Build #8e (Opus 5.5)
+
+- JXP accepted Q12.  I added task 8e to the Build list and did it.
+- New `hypernet/wiggles/phase0e_release2_wiggles.py`.  It reuses
+  `phase0a_budget_veit` (`_residual`, `_h2_profile`, `_project`, `_rms`) and
+  `phase0b_budget.rho2_baseline`.
+  - ρw is the site's agreed product (`whn_explore.product_for`, so
+    `reflectance_nosc` at MAFR).
+  - H2 comes from `srf.fit_lines` on the L2B `irradiance` and Ld,
+    unweighted.
+  - It writes `release2_wiggles_lines.parquet` under `$OS_COLOR` and the
+    committed `phase0e_*.csv` and `figs/phase0/phase0e_wiggles.png`.
+  - The run takes about 2 minutes for 224 sequences.
+- Results are in the Build #8e Q&A.  The narrow-E instruments show the
+  line-selective ρw excess H2 predicts: G band ×2.5-3.1 in the same-site
+  pairs, Na D ×0.8-0.9.  An E ≈ L control pair shows only a uniform ×0.5-0.8.
+  An unexplained 0.5-2 % line-residual floor remains on the E ≈ L
+  instruments.
+- `pytest -q`: 58 passed.  The new module is covered by the
+  wiggles-import test.

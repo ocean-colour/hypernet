@@ -59,7 +59,9 @@ residual after correction still correlates with Ed''/Ed, the SRF model
   `hypernet/wiggle_metrics.py`) in task 3 rather than copied.
 - **Data:** the delivered request under `$OS_COLOR/WATERHYPERNET/Wavelengths/`,
   indexed by Phase 0b at `$OS_COLOR/hypernet/wiggles/phase0/request_index.parquet`
-  (site, instrument, cal period, SZA, `sky`).  L2A variables to reuse
+  (site, instrument, cal period, SZA, and the sky index `ld_ed_750` /
+  `ed_cv_750` / `sky` of Phase 0 task 8e: Ld(750)/Ed(750), Ruddick et al.
+  2006 eqs. 23-24, clear < 0.05).  Ld = vza ≥ 90.  L2A variables to reuse
   unchanged: `water_leaving_radiance`, `rhof`, `downwelling_radiance`,
   `upwelling_radiance`, `irradiance`, `reflectance`, `reflectance_nosc`,
   `epsilon`.  PANTHYR VEIT_P L2 files are in the local
@@ -106,8 +108,9 @@ residual after correction still correlates with Ed''/Ed, the SRF model
    rms ρw'' within ±5 nm of the ten lines vs away, for h = 1 and 5 nm;
    corr(ρw'', Ed''/Ed) over 400-700 nm; the O2-A and Hα windows separately.
    Table `$OS_COLOR/hypernet/wiggles/phase3/metrics.parquet`, committed
-   summary `hypernet/wiggles/phase3_metrics.csv` by instrument and water type.  Log
-   your work.
+   summary `hypernet/wiggles/phase3_metrics.csv` by instrument, water type and
+   `sky` class (the method gains should not depend on the class; if they
+   do, say how, and plot the gain against `ld_ed_750`).  Log your work.
 
 4. **Feature preservation.**  `hypernet/wiggles/phase3_features.py`: the 683 nm
    fluorescence peak (height and ρw'' at 670-700 nm) at VEIT/GAIT and MAFR,
@@ -117,7 +120,8 @@ residual after correction still correlates with Ed''/Ed, the SRF model
 
 5. **Ring check.**  `hypernet/wiggles/phase3_ring.py`: for the `srf` residual at each
    line (ρw'' excess after correction), regress against ρ_f·Ld/Lu per
-   sequence and line.  A significant positive slope means the Ring effect is
+   sequence and line, with `ld_ed_750` as a covariate (cloud raises Ld and
+   changes the Ring filling-in).  A significant positive slope means the Ring effect is
    in the residual; report it, do not model it (plan §9 -- model only if it
    scales).  Table and figure.  Log your work.
 

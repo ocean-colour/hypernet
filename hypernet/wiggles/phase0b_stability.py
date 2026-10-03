@@ -187,7 +187,7 @@ def pairs(s):
     return pd.DataFrame(rows)
 
 
-def figures(s):
+def figures(s, prefix='stability', label='template fits'):
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
@@ -197,8 +197,8 @@ def figures(s):
     panels = [('fwhm_600_E', 'FWHM_E at 600 nm (nm)'), ('fwhm_600_Ld', 'FWHM_Ld at 600 nm (nm)'),
               ('dfwhm_450_Ld_E', 'FWHM_Ld − FWHM_E at 450 nm (nm)'),
               ('doffset_Ld_E', 'centroid offset Ld − E (nm)')]
-    for xname, xlab, fname in (('sza_l1a', 'SZA (deg)', 'stability_vs_sza.png'),
-                               ('date', 'date', 'stability_vs_time.png')):
+    for xname, xlab, fname in (('sza_l1a', 'SZA (deg)', prefix + '_vs_sza.png'),
+                               ('date', 'date', prefix + '_vs_time.png')):
         fig, axs = plt.subplots(2, 2, figsize=(10, 7.5), sharex=True)
         for ax, (q, lab) in zip(axs.ravel(), panels):
             for inst in insts:
@@ -219,10 +219,11 @@ def figures(s):
         h += [Line2D([], [], ls='', marker=m, ms=7, color='#555', label=k)
               for k, m in SKY_MARKERS.items()]
         h += [Line2D([], [], ls='', marker='o', ms=7, mfc='white', mec='#555', label='sky untagged')]
-        fig.legend(handles=h, loc='upper center', ncol=min(len(h), 7), frameon=False, fontsize=8.5)
-        fig.suptitle('SRF stability per instrument (template fits; n = %d sequences)' % len(s),
+        fig.suptitle('SRF stability per instrument (%s; n = %d sequences)' % (label, len(s)),
                      fontsize=10.5, y=0.995)
-        fig.tight_layout(rect=(0, 0, 1, 0.94))
+        fig.legend(handles=h, loc='upper center', bbox_to_anchor=(0.5, 0.965),
+                   ncol=min(len(h), 7), frameon=False, fontsize=8.5)
+        fig.tight_layout(rect=(0, 0, 1, 0.89))
         fig.savefig(os.path.join(FIGDIR, fname), dpi=150)
         plt.close(fig)
 

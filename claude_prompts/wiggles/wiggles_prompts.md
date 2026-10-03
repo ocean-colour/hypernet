@@ -79,6 +79,20 @@ Have them use Opus 5.5.  Use Fable if you can for this task.
 Log your work.  And remind me where the note to Kevin is located.  
 Or write it if you haven't yet.
 
+6. Kevin responded to our note and will provide the data.  He was confused by one request -- the sky column in the data request.  Kevin wrote:
+
+```
+I’m not sure what you want for the “sky” in the csv, but I recommend to use Ld_750/Ed_750 as a good indicator of blue sky (low) vs clouds in the sky-viewing or sun-direction (high).
+
+ 
+
+[Ruddick et al, 2006] equation (24) suggested to use the threshold of 0.05 for this parameter (but the Rhof(wind) formulae used in that equation is obsolete and should not be used).
+```
+
+I have added the Ruddick et al, 2006 paper to the `context/papers` directory.  Please read it and see if you agree with Kevin's suggestion.
+If so, modify the prompt docs accordingly.  
+Use Fable if you can.  Log your work.
+
 ## Q&A
 
 ### Setup #1 -- 2026-09-26 (drafted with Fable)
@@ -430,6 +444,53 @@ We would also ask for:
    data requested.*
 >A Use the default
 
+### Setup #6 -- 2026-10-03 (drafted with Fable): Kevin's sky index
+
+**Verdict: agree, with two modifications.**
+
+- **What eq. 24 is.**  Ruddick et al. (2006, L&O 51:1167; p. 1173) switch
+  the sky-glint coefficient on L0+sky(750)/E0+d(750).  Below 0.05 the sky is
+  clear and ρ_sky follows the wind (eq. 23).  At or above 0.05 it is cloudy
+  and ρ_sky = 0.0256 (eq. 24).  The text quotes ~0.02 for clear skies
+  (Mobley 1999) and ~0.3 for full overcast; an isotropic sky gives 1/π.
+  Kevin's caveat holds: the obsolete ρ(wind) formula sits only in eq. 23's
+  glint term, and the index uses measured Ld and Ed with no ρ.
+- **We can compute it ourselves.**  Ld and Ed are in L1A, L1C_ALL, L2A_REF
+  and the Release 2 L2B we already hold, so Kevin need not fill anything.
+  VEIT sample: 0.0270.  Over the 224 requested sequences (L2B): 10/50/90 %
+  quantiles 0.013 / 0.024 / 0.114, max 0.313, and 78 % below 0.05
+  (`wavecal/ld_ed_750_request.py`).
+- **The 0.05 threshold transfers to HYPSTAR.**  Every requested sequence is
+  at relative azimuth 90°, while the 2006 paper used 135°.  Even so, the
+  clear floor (10th percentile, 0.011-0.015) is flat with SZA, so one
+  threshold suffices.  Every SZA bin holds both clear and cloudy cases.
+- **Modification 1: keep the number, not just a tag.**  Phase 0 regresses
+  FWHM and offsets on the continuous `ld_ed_750`.  The classes are for plots:
+  clear < 0.05, cloudy 0.05-0.25, overcast ≥ 0.25.
+- **Modification 2: add a broken-cloud flag.**  The paper says neither
+  branch fits partly cloudy skies, and it dropped those stations.  The index
+  also mixes "cloud in the sky view, sun clear" with "sun covered, blue
+  view", and for the diffuser/SRF question it is the sun direction that
+  matters.  So we add the within-sequence Ed scan CV at 750 nm from L1A
+  (`broken` if > 2 %; VEIT has 0.46 %).  We do not use the difference
+  between the two sky series as a flag: it was already 15 % on the clear
+  VEIT sample.
+- **Edits made:**
+  - Phase 0: Context → Sky index; new task 8e; tasks 9 and 11; G0(b).
+  - Phase 1 task 5: RAA 90° and a clear-floor check.
+  - Phase 3: Context, metrics by sky class, and a Ring covariate.
+  - `docs/wiggles_planning.md`: §3, §5, the timeline and the references.
+  - `docs/wiggles_data_request.csv` is unchanged (as sent).
+
+**Questions for JXP** (defaults stand unless you say otherwise)
+
+1. Thresholds: clear < 0.05 (Kevin's), overcast ≥ 0.25, broken if Ed CV > 2 %?
+>A. Yes, those thresholds are fine.
+2. Shall I draft a one-paragraph reply to Kevin (in `correspondence/`) saying
+   we adopt his index and compute it ourselves, so he only needs to swap
+   spares?
+>A. Yes, draft a short reply.  Then hold tight.
+
 ## Logs
 
 ### 2026-09-26 -- Setup #1
@@ -553,3 +614,28 @@ We would also ask for:
   (not sent).  It gives the one-sequence finding, the generalised eq. 14, the
   data/cal/SRF requests and the attribute-bug confirmation.  It attaches the
   plan doc and `docs/wiggles_data_request.csv`.
+
+### 2026-10-03 -- Setup #6
+
+- Kevin proposed Ld(750)/Ed(750) with a 0.05 threshold (Ruddick et al. 2006,
+  eq. 24) in place of the `sky` column.  A Fable subagent read the paper in
+  full and computed the index.  I checked the eq. 23/24 text, the
+  0.02/0.3 quote and the partly-cloudy caveat in the PDF.  I also re-ran
+  both scripts and got the same numbers.
+- Saved the scripts as `wavecal/ld_ed_750_veit.py` (VEIT sample, variable
+  inventory) and `wavecal/ld_ed_750_request.py` (all 224 request rows →
+  `$OS_COLOR/hypernet/wavecal/ld_ed_750_request.csv`).
+- Edited the Phase 0, 1 and 3 prompt docs and `docs/wiggles_planning.md`
+  (see Q&A Setup #6).  Phase 2 needed no change.  Updating the code
+  (`whn_l1a.sky_index`, `phase0b_index.py`, `phase0b_stability.py`) is now
+  Phase 0 task 8e; no package code changed today.
+- Learned:
+  - All requested HYPSTAR sequences are at relative azimuth 90°, not the
+    135° of the protocols.
+  - L2B carries `downwelling_radiance` and `irradiance`, so the sky index
+    is available archive-wide without L1A.
+  - HYPERNETS L2 still uses the Mobley 1999 ρ (rhof 0.026-0.038).
+- JXP's answers to Setup #6: the thresholds are accepted, and I am to draft a
+  short reply to Kevin, then hold.  The reply draft is given in the chat for
+  JXP and was not saved to `correspondence/`.  A task-8e run was started and
+  then stopped before it changed any file, so 8e is still open.

@@ -621,7 +621,7 @@ _TEMPLATE_KEYS = ['lo', 'hi', 'lam_center', 'sigma', 'sigma_err', 'fwhm', 'fwhm_
 
 
 def fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err=None, veil=True,
-                     sigma0=1.2):
+                     sigma0=1.2, via_grid=None):
     """Fit a Gaussian SRF by forward-modelling a high-resolution reference.
 
     Model, for pixels in ``[lo, hi]``::
@@ -640,6 +640,11 @@ def fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err=None, veil=True,
     Because the reference carries the true line profiles (blends, wings,
     bands), sigma is the SRF width itself, not the SRF convolved with a line.
 
+    With ``via_grid`` the model is evaluated on that grid and then linearly
+    interpolated (``np.interp``) onto ``wav``: the spectrum was observed on
+    ``via_grid`` and resampled, as WATERHYPERNET L1C/L2 irradiance is (the E
+    grid resampled onto the L grid).
+
     The reference must be on the same wavelength scale (air or vacuum) as the
     one ``dlam`` is to be measured against.  :func:`hypernet.refspec.load_hsrs`
     with ``frame='air'`` gives HSRS in air.
@@ -652,6 +657,7 @@ def fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err=None, veil=True,
         err (np.ndarray, optional): 1-sigma per-pixel error of ``spec``.
         veil (bool): fit the additive veil.
         sigma0 (float): initial sigma, nm.
+        via_grid (np.ndarray, optional): native grid of the observation, nm.
 
     Returns:
         dict: ``lo, hi, lam_center, sigma, sigma_err, fwhm, fwhm_err, dlam,
@@ -676,13 +682,25 @@ def fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err=None, veil=True,
     k1 = np.searchsorted(ref_wave, hi + 8.0)
     rw, rf = ref_wave[k0:k1], ref_flux[k0:k1]
 
+    g = None
+    if via_grid is not None:
+        via_grid = np.asarray(via_grid, dtype=float)
+        g = via_grid[(via_grid > lo - 3.0) & (via_grid < hi + 3.0)]
+        if g.size < 4:
+            return out
+
+    def conv(xx, sig, dl):
+        if g is None:
+            return convolve_gaussian(rw, rf, xx - dl, sig)
+        return np.interp(xx, g, convolve_gaussian(rw, rf, g - dl, sig))
+
     def f(xx, c0, c1, sig, dl, *v):
-        R = convolve_gaussian(rw, rf, xx - dl, sig)
+        R = conv(xx, sig, dl)
         vv = v[0] if v else 0.0
         return (c0 + c1 * (xx - xc)) * (R + vv * R.mean())
 
     # linear continuum guess given sigma0
-    R0 = convolve_gaussian(rw, rf, x, sigma0)
+    R0 = conv(x, sigma0, 0.0)
     A = np.column_stack([R0, R0 * (x - xc)])
     c0, c1 = np.linalg.lstsq(A, y, rcond=None)[0]
     p0 = [c0, c1, sigma0, 0.0] + ([0.0] if veil else [])
@@ -714,7 +732,7 @@ def fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err=None, veil=True,
 
 
 def fit_template_windows(wav, spec, ref_wave, ref_flux, windows=None, err=None,
-                         veil=True):
+                         veil=True, via_grid=None):
     """:func:`fit_srf_template` over a list of windows.
 
     The table is shaped for :meth:`SRFModel.from_lines` (``lam_air`` = window
@@ -723,6 +741,7 @@ def fit_template_windows(wav, spec, ref_wave, ref_flux, windows=None, err=None,
 
     Args:
         windows (list of (lo, hi)): default :func:`template_windows`.
+        via_grid (np.ndarray, optional): passed to :func:`fit_srf_template`.
 
     Returns:
         pd.DataFrame: one row per window.
@@ -730,7 +749,8 @@ def fit_template_windows(wav, spec, ref_wave, ref_flux, windows=None, err=None,
     windows = template_windows() if windows is None else windows
     rows = []
     for lo, hi in windows:
-        r = fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err=err, veil=veil)
+        r = fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err=err, veil=veil,
+                             via_grid=via_grid)
         r['name'] = 'T%03.0f-%03.0f' % (lo, hi)
         rows.append(r)
     df = pd.DataFrame(rows)

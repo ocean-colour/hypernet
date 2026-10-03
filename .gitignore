@@ -8,6 +8,7 @@ __pycache__/
 
 # Generated PDFs of the documents under docs/ (rendered by docs/make_pdf.py)
 docs/*.pdf
+context/papers/*.pdf
 
 # Distribution / packaging
 .Python

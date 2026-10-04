@@ -481,3 +481,56 @@ notebooks; nothing run):
   case (iv) should include a *linear* wavelength error (±0.1 nm at the ends),
   not only a rigid shift.
 - `pytest -q` (hypernet): 71 passed.
+
+### 2026-10-04 -- Build #4: Emod builder (Opus 5.5)
+
+- Completed `hypernet/emod.py`, which 8d started:
+  - `build_emod(sza, pwv_mm=15, ozone_du=300, pressure_hpa=1013.25,
+    temperature_k=296, ozone_temperature_k=293, diffuse_airmass=1.66,
+    lam_min=380, lam_max=1000, step=0.01, cache=True, cache_dir=None)`
+    returns `lam` (a regular 0.01 nm **air** grid, 62,001 points), `F0`
+    (TSIS-1 HSRS, W m⁻² nm⁻¹, bin-averaged), `T_direct`, `T_diffuse`,
+    `T_gas_direct`, `T_o3_direct`, the air masses and the inputs.
+  - It is cached as npz in `$OS_COLOR/hypernet/wiggles/ref/emod/`, keyed by
+    every input.  A first build takes 3.2 s; a cache hit is instant and
+    identical.
+  - `gas_transmittance(lam, airmass, pwv_mm, pressure_hpa, temperature_k)`
+    now forms exp(−mτ) on the fine HITRAN grid (0.02 cm⁻¹) and
+    **bin-averages it** onto `lam` (flux-conserving `_bin_average`).  The
+    8d interpolation is kept as `bin_average=False`.
+  - `ozone_transmittance(lam, airmass, ozone_du, temperature_k=293)` and
+    `ozone_cross_section` read Serdyuchenko et al. (2014).
+    - URL: `https://www.iup.uni-bremen.de/gruppen/molspec/downloads/serdyuchenkogorshelev5digits.dat`.
+    - SHA-256: `4dfbf021b746512c192df5f0d43c54cee6ea3b4365bb490bcf6ed347f0ce7092`.
+    - 12.5 MB, 213-1100 nm at 0.01 nm, vacuum, 11 temperatures 193-293 K.
+    - Stored in `$OS_COLOR/hypernet/wiggles/ref/ozone/`, with an npz copy.
+  - Also `fetch_ozone`, `kasten_young_airmass` and `f0_on_grid` (HSRS
+    bin-averaged in air).
+- **Documented choices** (module docstring):
+  - The direct air mass is Kasten & Young (1989).
+  - The diffuse air mass is fixed at **1.66** (the two-stream diffusivity
+    factor: skylight is scattered above most of the H₂O and arrives from
+    all directions); case (vi) bounds it.
+  - One gas layer at surface p and T.
+  - O₃ at 293 K (Q7).
+  - O₂-O₂ CIA (477/577/630 nm) is not in HITRAN line lists, so it is not
+    modelled (broad, a few per cent).
+  - No Rayleigh or aerosol: OSOAA supplies them, smooth, in task 5.
+- **Full-range cross-sections** (379-1001 nm, 819,761 wavenumber points)
+  are cached.  O₂ is instant; H₂O took 21 s for 163,805 lines.
+- **VEIT geometry check** (SZA 36.7°, air mass 1.246):
+  - T_direct(760.6 nm) = 0.128 and T_diffuse = 0.065, as 0.01 nm bin means.
+  - Band means: O₂-A 759-770 0.60; O₂-B 686-695 0.85; H₂O 925-960 0.48.
+  - O₃ T(600) = 0.950, which matches 300 DU × σ × m by hand.
+  - F0(550) = 2.0 W m⁻² nm⁻¹.
+- Tests in `hypernet/tests/test_emod.py`, now 6:
+  - the Kasten-Young values;
+  - `_bin_average` conserves flux (analytic sin bins, 1e-5);
+  - O₃ transmittance at the Chappuis peak;
+  - `build_emod`: 0.01 nm spacing, 380-1000 nm, T in [0, 1], O₂-A
+    T_direct(760.6) in the **stated range 0.05-0.25** (air mass 1.25,
+    0.01 nm bins), T_diffuse < T_direct there, F0(550) in 1.5-2.2, and a
+    cache hit reproducing every array exactly (in a tmp dir).
+  - The HITRAN-, HSRS- and O₃-dependent tests skip when the files are
+    absent.
+- `pytest -q`: 75 passed.

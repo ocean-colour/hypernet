@@ -411,3 +411,73 @@ notebooks; nothing run):
     hours.
 - No hypernet package code changed for task 2; `pytest -q` (hypernet): 60
   passed.
+
+### 2026-10-03 -- Build #3: `hypernet/rt/osoaa.py` (Opus 5.5)
+
+- New subpackage `hypernet/rt/` (Q2), with `osoaa.py`:
+  - `osoaa_root(path=None)`: the argument, then `$OSOAA_ROOT`, then the
+    fork's default path (Q3); raises if the exe is missing.  Also
+    `exe_path()`.
+  - `default_params(wavelength_nm, sza, work_dir, mie_dir=None, phi=90,
+    level=3, aot550=0.1, aer_waref_um=0.55, chl=1, csed=0, ys440=0,
+    det440=0, wind=5, sea_depth=100, pressure=1013)`.
+    - Its aerosol, hydrosol and surface settings are the fork's defaults,
+      but **`AER.Waref` is fixed at 0.55 µm** (the Setup bug: the fork tied
+      it to the run wavelength, which made AOT spectrally flat).
+    - `mie_dir` lets one Mie/surface-matrix database be reused across runs.
+    - It always requests `LUM_vsVZA.txt` and both Advanced files.
+  - `build_command(params)`, and `run(params, work_dir=None)`, which runs
+    one wavelength in a subprocess with `OSOAA_ROOT` in its environment,
+    raises `RuntimeError` on failure, and returns the parsed outputs plus
+    `seconds`.
+  - Parsers:
+    - `parse_flux` (`Flux.txt`, every level);
+    - `parse_lum_advanced` (Up or Down: level, z, signed VZA, scattering
+      angle, I/Q/U, polarisation; the header's 0+/0− level numbers and the
+      azimuths for ±VZA);
+    - `parse_lum_advanced_down` (checks the direction);
+    - `parse_lum_vsvza` (the standard per-level file, with I and REFL);
+    - `radiance_at(adv, level, vza)` (VZA interpolation; level `'0+'`/`'0-'`
+      allowed).
+- **A finding that simplifies task 5.**  The keywords
+  `-OSOAA.ResFile.Adv.Up` and `-OSOAA.ResFile.Adv.Down` (`OSOAA_MAIN.F`
+  1067-1085, parser 3102-3110) write the upward and downward radiance **at
+  every level and every VZA** for the chosen azimuth.  So **one run per
+  wavelength gives Ld at 0+ (Down, level 26), Lu at 0− (Up, level 27) and
+  Lu at 0+**, and no separate Level-3/Level-4 runs are needed.  That halves
+  the task 5 budget: ~21 min per case on the 5 nm grid; 24 cases ≈ 8.5 h
+  serial.
+- **Units.**  Radiances are I = πL/E_sun and the TOA flux is π, so L/E =
+  I/F, and REFL in the vsVZA file = πI/F(level).  At 550 nm (SZA 40°, AOT
+  0.1) the fixture gives Ld/Ed(0+) in 0.01-0.1 sr⁻¹ at the HYPSTAR sky view;
+  it is a test bound.  ~10 s per run.
+- Fixtures in `hypernet/tests/data/osoaa/` come from one real run (550 nm,
+  SZA 40°, RAA 90°, AOT(550) 0.1, Chl 1).  They are `Flux.txt`,
+  `LUM_vsVZA.txt`, `ListParam.txt` and the two Advanced files, **trimmed to
+  levels 0, 25, 26, 27 and 28** (1.26 MB → 60 kB each, headers kept), plus a
+  README.
+- New `hypernet/tests/test_osoaa.py`, 6 tests:
+  - the flux parser (TOA = π cos SZA, direct + diffuse = total, Ed falling
+    with depth);
+  - the advanced parsers (direction, 0± levels, azimuths, zero downward
+    radiance at TOA, a direction check);
+  - sky and water radiances at the HYPSTAR geometry, with Lu at the
+    refracted angle;
+  - vsVZA REFL = πI/F;
+  - the aerosol-reference fix;
+  - a live 550 nm run (`needs_osoaa`), which reproduces the fixture fluxes
+    to 1e-4.
+- `pytest -q` (hypernet): see the next log entry.
+- **Task 4 head start** (from Phase 0 task 8d): `hypernet/emod.py` already
+  has the HITRAN line lists (O₂ and H₂O, 379-1000 nm, cached under
+  `$OS_COLOR/hypernet/wiggles/ref/hitran`), `cross_section`, `columns`,
+  `optical_depth` and `gas_transmittance(lam, airmass, pwv_mm,
+  pressure_hpa, temperature_k)`, with tests in `hypernet/tests/test_emod.py`.
+  Task 4 still needs ozone (Serdyuchenko), `build_emod`, the diffuse air
+  mass, the 0.01 nm full-range cache and its tests.
+- Also from 8d, for the twin experiment: the irradiance SRF is mildly
+  flat-topped (super-Gaussian p ≈ 2.2), the radiance SRF Gaussian.  The L
+  wavelength scale has a dispersion term (−0.03 to −0.05 nm per 100 nm), so
+  case (iv) should include a *linear* wavelength error (±0.1 nm at the ends),
+  not only a rigid shift.
+- `pytest -q` (hypernet): 71 passed.

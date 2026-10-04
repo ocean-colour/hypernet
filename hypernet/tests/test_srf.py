@@ -320,3 +320,35 @@ def test_template_fit_via_grid():
     assert r['ok']
     assert r['sigma'] == pytest.approx(sig, abs=0.01)
     assert r['dlam'] == pytest.approx(dl, abs=0.01)
+
+
+@pytest.mark.parametrize('shape,par', [('pvoigt', 0.3), ('supergauss', 3.0)])
+def test_template_fit_shapes(shape, par):
+    """A non-Gaussian SRF is recovered, FWHM and shape parameter."""
+    rw, rf = _fake_reference()
+    sig = 1.1
+    x = WAV[(WAV > 470) & (WAV < 530)]
+    y = srf.convolve_kernel(rw, rf, x - 0.03, sig, shape, par)
+    e = np.full_like(x, 1e-4)
+    r = srf.fit_srf_template(x, y, rw, rf, 490.0, 510.0, err=e, veil=False, shape=shape)
+    assert r['ok']
+    assert r['fwhm'] == pytest.approx(srf.FWHM_PER_SIGMA * sig, abs=0.02)
+    assert r['shape_par'] == pytest.approx(par, abs=0.05 * max(1, par))
+    # a Gaussian truth gives the Gaussian limit
+    yg = srf.convolve_gaussian(rw, rf, x, sig)
+    rg = srf.fit_srf_template(x, yg, rw, rf, 490.0, 510.0, err=e, veil=False, shape=shape)
+    assert rg['shape_par'] == pytest.approx({'pvoigt': 0.0, 'supergauss': 2.0}[shape], abs=0.05)
+
+
+def test_template_fit_absorber():
+    """A band (tau x k) on the reference is fitted with its scale."""
+    rw, rf = _fake_reference()
+    tau = 0.5 * np.exp(-0.5 * ((rw - 500.0) / 0.8) ** 2)       # a broad 'band'
+    sig, k = 1.0, 2.5
+    x = WAV[(WAV > 470) & (WAV < 530)]
+    y = srf.convolve_gaussian(rw, rf * np.exp(-k * tau), x, sig)
+    e = np.full_like(x, 1e-4)
+    r = srf.fit_srf_template(x, y, rw, rf, 490.0, 510.0, err=e, veil=False, absorber=tau)
+    assert r['ok']
+    assert r['tau_scale'] == pytest.approx(k, abs=0.05)
+    assert r['sigma'] == pytest.approx(sig, abs=0.01)

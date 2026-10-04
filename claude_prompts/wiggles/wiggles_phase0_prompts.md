@@ -907,6 +907,81 @@ here.
     Task 8d(iii)/(veil) can test this by freeing the veil on Release 2
     Ld.  It also bears on Phase 3's Ring covariate.
 
+### Build #8d -- 2026-10-03 (Opus 5.5): template-fit refinements
+
+The script is `python -m hypernet.wiggles.phase0d_refine [--part
+telluric|shape|lured|trend|ring]`.  Tables are in `hypernet/wiggles/phase0d_*.csv`
+and the figure is `figs/phase0/phase0d_telluric_shape.png`.
+
+- **(i) Telluric gap, 680-850 nm (HAPI).**
+  - New `hypernet/emod.py` (the Phase 1 Q2 module, started early) computes
+    HITRAN O₂ and H₂O cross-sections via HAPI, cached under
+    `$OS_COLOR/hypernet/wiggles/ref/hitran`.
+  - The template fit has a new `absorber=τ(λ)` option: the reference
+    becomes HSRS·exp(−kτ), with k fitted.  The dominant absorber is fitted
+    and the minor one applied at the geometric air mass.
+  - All 17 windows fit for E and Ld (16 of 17 for Lu).
+  - **Check:** in O₂-A (760-770 nm) the fitted k is 1.27 for E against a
+    geometric air mass of 1.25 (SZA 36.7°), and 1.35 for Ld.
+  - The band widths scatter more than the Fraunhofer windows (1.6-3.9 nm;
+    the single-layer HAPI model is approximate).  E and Ld converge to
+    ~2.5 nm there, consistent with Ld − E → 0 in the red.
+  - **Refitting FWHM(λ) with these windows moves the shipped model by
+    ≤ 0.03 nm for E and Ld (|z| < 0.4)** and halves its errors at
+    750-850 nm.  So, by this task's rule, `hypernet/data/veit_srf_model.json`
+    is **unchanged**.  The candidate is saved as
+    `$OS_COLOR/hypernet/wiggles/phase0/veit_srf_model_with_telluric.json`.
+- **(ii) SRF shape: Gaussian is adequate.**  27 windows per channel on VEIT:
+  - **Pseudo-Voigt:** η median 0, weighted 0.06 ± 0.01 (E) and 0.05 ± 0.01
+    (Ld), with no χ² gain.  Only a few blend windows (505, 595 and 855 nm)
+    want wings.
+  - **Super-Gaussian:**
+    - Ld: p = 2.00 ± 0.02, exactly Gaussian.
+    - E: p = 2.23 ± 0.03, slightly flat-topped, with χ²_ν 11 % lower.
+  - So the irradiance channel's SRF is mildly box-like (a filled slit?).
+    That is a refinement, not a reason to leave the Gaussian.
+- **(iii) The Lu "red additive component" is not additive.**
+  - Fitting VEIT Lu with the veil free is inconclusive (the veils are noisy
+    and of both signs).
+  - Decisive instead: **Lu/Ld in the NIR, where Lw ≈ 0, is flat at
+    0.037-0.039 from 900 to 1050 nm**, including across the 940 nm H₂O band,
+    where Ld halves.  A dark or stray-light offset would make the ratio
+    jump there; the excess scales with Ld.
+  - So it is a **higher effective surface reflectance (≈0.038) than the
+    processor's ρ_F (0.027)**.  The Release 2 clear sites agree (Lu/Ld at
+    985 nm: 120242 0.032, 121222 0.041, 122304 0.038, 122305 0.041; ρ_F
+    0.027).  The turbid sites are higher because of real NIR Lw (MAFR
+    0.07-0.15, BEFR 0.08).
+  - Task 6's red EW deficit in Lu is therefore more likely line filling in
+    Lw (water Raman) than stray light.
+  - Worth telling Kevin: at RAA 90° the Mobley ρ looks ~40 % low in the
+    NIR at the clear sites.
+- **(iv) The wavelength offset has a significant, consistent trend.**
+  Release 2, per-sequence slopes of dlam against λ, then mean ± sem per
+  instrument:
+  - Ld: −0.026 to −0.050 nm per 100 nm (t = 10-15) on all 7 instruments.
+  - E: −0.005 to −0.024 (t = 3-12).
+  - Across 390-870 nm that is a −0.12 to −0.24 nm shift for Ld and −0.03 to
+    −0.12 for E.
+  - So the L wavelength scale has a stretch, about +0.1 nm in the blue to
+    −0.1 nm in the red, which **exceeds the G0(c) 0.1 nm at the ends**.  The
+    E − L offset also varies across the spectrum by ~0.1-0.2 nm.
+  - This is a dispersion (linear) term, not the air/vacuum question: vacuum
+    would give a positive slope of +0.13 nm over the range.
+  - For Phase 2: a linear wavelength correction per instrument and channel
+    is cheap and would remove it.  G0(c)'s verdict becomes "relative offset
+    small on average, but a linear dispersion term of 0.1-0.2 nm across the
+    range should be corrected".
+- **Ring test (from 8e).**  I refitted the 224 Release 2 Ld with the veil
+  free.
+  - The FWHM_Ld-vs-sky-index slopes shrink to within ~1σ of 0 (e.g. 122302
+    −0.18 → 0.00, 122305 −0.37 → +0.15, 122304 −0.26 → −0.15).
+  - The fitted veil falls with the sky index on 6 of 7 instruments (122305
+    −0.21 ± 0.07, 122304 −0.07 ± 0.04): more filling under clear skies.
+  - So the apparent narrowing of Ld under cloud is mostly Ring filling-in
+    absorbed as width when the veil is fixed.  For SRF tables, fit Ld with
+    the veil free, or use clear-sky sequences only; E is unaffected.
+
 ## Logs
 
 ### 2026-09-28 -- Setup #1 (Opus 5.5)
@@ -1649,3 +1724,31 @@ here.
 - Results are in the Build #8e Q&A: class counts per row, coverage gaps by
   SZA, and FWHM_Ld narrowing by 0.05-0.10 nm from clear to overcast
   (a Ring signature?).
+
+### 2026-10-03 -- Build #8d (Opus 5.5)
+
+- `hypernet/srf.py`:
+  - `srf_kernel` and `convolve_kernel`, with shapes `gauss`, `pvoigt` (η)
+    and `supergauss` (p); `sigma` is FWHM/2.3548 for every shape.
+  - `fit_srf_template(..., shape=, absorber=)` fits the shape parameter
+    and an absorber scale k ≥ 0.  The defaults are unchanged.
+  - `fit_template_windows` passes both through.  `_TEMPLATE_KEYS` gains
+    `shape, shape_par(_err), tau_scale(_err)`.
+- New `hypernet/emod.py` (the Phase 1 module name, Q2): `hitran_dir`,
+  `fetch_lines`, `cross_section` (HAPI Voigt, cached npz), `columns`,
+  `optical_depth` and `gas_transmittance(lam, airmass, pwv_mm, pressure_hpa,
+  temperature_k)`.
+  - HITRAN lines were fetched for 10000-26400 cm⁻¹ (379-1000 nm): O₂ 528
+    lines, H₂O 163,805.  The H₂O cross-section over 675-875 nm takes 17 s,
+    then comes from the cache.
+- New `hypernet/wiggles/phase0d_refine.py`, with the five parts above.
+  Committed outputs: the CSVs `phase0d_{telluric_windows,
+  telluric_model_compare,shape_windows,shape_summary,lured_windows,
+  lured_nir_veit,lured_release2,trend,ring}.csv` and one figure.
+- Tests:
+  - `test_srf.py`: shapes (pseudo-Voigt and super-Gaussian recover FWHM and
+    shape parameter; a Gaussian truth gives η → 0, p → 2) and the absorber
+    scale.
+  - New `test_emod.py`: columns; O₂-A saturated cores and band mean;
+    air-mass dependence (Tier 2).
+- `pytest -q`: 71 passed.

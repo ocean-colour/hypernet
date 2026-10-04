@@ -615,27 +615,83 @@ def convolve_gaussian(ref_wave, ref_flux, wav, sigma):
     return (g @ rf) / g.sum(axis=1)
 
 
+#: SRF kernel shapes for the template fit (Phase 0 task 8d(ii)).
+SHAPES = ('gauss', 'pvoigt', 'supergauss')
+
+
+def srf_kernel(dx, sigma, shape='gauss', shape_par=None):
+    """Unnormalised SRF weights at offsets ``dx`` (nm) for an SRF whose FWHM is
+    ``FWHM_PER_SIGMA * sigma`` whatever the shape.
+
+    - ``'gauss'``: exp(-dx^2 / 2 sigma^2).
+    - ``'pvoigt'``: (1 - eta) Gaussian + eta Lorentzian with the same FWHM,
+      ``shape_par`` = eta in [0, 1] (0 = Gaussian; > 0 = extended wings).
+    - ``'supergauss'``: exp(-0.5 |dx / s|^p), with s set so that the FWHM
+      matches; ``shape_par`` = p (2 = Gaussian; > 2 flat-topped; < 2 peaked).
+    """
+    f = FWHM_PER_SIGMA * sigma
+    if shape == 'gauss':
+        return np.exp(-0.5 * (dx / sigma) ** 2)
+    if shape == 'pvoigt':
+        eta = shape_par
+        g = np.exp(-0.5 * (dx / sigma) ** 2) / (sigma * np.sqrt(2 * np.pi))
+        gam = 0.5 * f
+        lor = gam / np.pi / (dx ** 2 + gam ** 2)
+        return (1 - eta) * g + eta * lor
+    if shape == 'supergauss':
+        pp = shape_par
+        s_ = f / (2.0 * (2.0 * np.log(2.0)) ** (1.0 / pp))
+        return np.exp(-0.5 * np.abs(dx / s_) ** pp)
+    raise ValueError('unknown shape %r' % shape)
+
+
+def convolve_kernel(ref_wave, ref_flux, wav, sigma, shape='gauss', shape_par=None,
+                    half=None):
+    """As :func:`convolve_gaussian`, for any :func:`srf_kernel` shape.  The
+    kernel is truncated at +-``half`` nm (default 6 sigma for the Gaussian and
+    super-Gaussian, 8 nm for the pseudo-Voigt's wings) and renormalised."""
+    if shape == 'gauss':
+        return convolve_gaussian(ref_wave, ref_flux, wav, sigma)
+    wav = np.atleast_1d(np.asarray(wav, dtype=float))
+    half = half or (8.0 if shape == 'pvoigt' else 6 * sigma)
+    j0 = np.searchsorted(ref_wave, wav.min() - half)
+    j1 = np.searchsorted(ref_wave, wav.max() + half)
+    rw, rf = ref_wave[j0:j1], ref_flux[j0:j1]
+    dw = np.gradient(rw)
+    dx = wav[:, None] - rw[None, :]
+    k = srf_kernel(dx, sigma, shape, shape_par) * (np.abs(dx) <= half) * dw[None, :]
+    return (k @ rf) / k.sum(axis=1)
+
+
 _TEMPLATE_KEYS = ['lo', 'hi', 'lam_center', 'sigma', 'sigma_err', 'fwhm', 'fwhm_err',
-                  'dlam', 'dlam_err', 'veil', 'veil_err', 'c0', 'c1', 'chi2_nu',
+                  'dlam', 'dlam_err', 'veil', 'veil_err', 'shape', 'shape_par',
+                  'shape_par_err', 'tau_scale', 'tau_scale_err', 'c0', 'c1', 'chi2_nu',
                   'npix', 'ok']
 
 
 def fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err=None, veil=True,
-                     sigma0=1.2, via_grid=None):
-    """Fit a Gaussian SRF by forward-modelling a high-resolution reference.
+                     sigma0=1.2, via_grid=None, shape='gauss', absorber=None):
+    """Fit an SRF by forward-modelling a high-resolution reference.
 
     Model, for pixels in ``[lo, hi]``::
 
-        spec(x) = (c0 + c1 (x - xc)) * (R_sigma(x - dlam) + veil * <R_sigma>)
+        spec(x) = (c0 + c1 (x - xc)) * (R(x - dlam) + veil * <R>)
+        R = [ref_flux * exp(-k * absorber)] convolved with the SRF
 
-    where ``R_sigma`` is the reference convolved with a Gaussian of width
-    ``sigma`` (:func:`convolve_gaussian`), ``<R_sigma>`` its mean over the
-    window, and ``xc`` the window centre.
+    The SRF is a Gaussian of width ``sigma`` by default
+    (:func:`convolve_gaussian`); ``shape`` selects a pseudo-Voigt or
+    super-Gaussian with one extra fitted parameter (:func:`srf_kernel`;
+    ``sigma`` is then FWHM / 2.3548 for every shape).  ``<R>`` is R's mean
+    over the window and ``xc`` the window centre.
 
     - ``dlam`` is measured minus reference wavelength (the sign of ``dmu``
       in :func:`fit_lines`).
     - ``veil`` is an additive, line-free fraction of the mean level (Ring
       filling-in, stray light); fixed at 0 with ``veil=False``.
+    - ``absorber``: an optical depth tau(lambda) on ``ref_wave`` (e.g. O2 and
+      H2O for unit air mass, from :func:`hypernet.emod.gas_transmittance`).
+      Its scale ``k`` >= 0 (the effective air mass x column) is fitted.  This
+      lets telluric windows be fitted (Phase 0 task 8d(i)).
 
     Because the reference carries the true line profiles (blends, wings,
     bands), sigma is the SRF width itself, not the SRF convolved with a line.
@@ -658,11 +714,14 @@ def fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err=None, veil=True,
         veil (bool): fit the additive veil.
         sigma0 (float): initial sigma, nm.
         via_grid (np.ndarray, optional): native grid of the observation, nm.
+        shape (str): one of :data:`SHAPES`.
+        absorber (np.ndarray, optional): optical depth on ``ref_wave``.
 
     Returns:
         dict: ``lo, hi, lam_center, sigma, sigma_err, fwhm, fwhm_err, dlam,
-        dlam_err, veil, veil_err, c0, c1, chi2_nu, npix, ok``.  NaN with
-        ``ok=False`` on failure; never raises.
+        dlam_err, veil, veil_err, shape, shape_par, shape_par_err, tau_scale,
+        tau_scale_err, c0, c1, chi2_nu, npix, ok``.  NaN with ``ok=False`` on
+        failure; never raises.
     """
     wav = np.asarray(wav, dtype=float)
     spec = np.asarray(spec, dtype=float)
@@ -674,13 +733,16 @@ def fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err=None, veil=True,
     e = err[m] if err is not None else None
     xc = 0.5 * (lo + hi)
     out = {k: np.nan for k in _TEMPLATE_KEYS}
-    out.update(lo=lo, hi=hi, lam_center=xc, npix=int(x.size), ok=False)
-    npar = 5 if veil else 4
+    out.update(lo=lo, hi=hi, lam_center=xc, npix=int(x.size), ok=False, shape=shape)
+    has_shape = shape != 'gauss'
+    has_tau = absorber is not None
+    npar = 4 + has_shape + bool(veil) + has_tau
     if x.size < npar + 4 or ref_wave[0] > lo - 6 or ref_wave[-1] < hi + 6:
         return out
-    k0 = np.searchsorted(ref_wave, lo - 8.0)
-    k1 = np.searchsorted(ref_wave, hi + 8.0)
+    k0 = np.searchsorted(ref_wave, lo - 10.0)
+    k1 = np.searchsorted(ref_wave, hi + 10.0)
     rw, rf = ref_wave[k0:k1], ref_flux[k0:k1]
+    tau = np.asarray(absorber, dtype=float)[k0:k1] if has_tau else None
 
     g = None
     if via_grid is not None:
@@ -689,36 +751,53 @@ def fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err=None, veil=True,
         if g.size < 4:
             return out
 
-    def conv(xx, sig, dl):
-        if g is None:
-            return convolve_gaussian(rw, rf, xx - dl, sig)
-        return np.interp(xx, g, convolve_gaussian(rw, rf, g - dl, sig))
+    # parameter layout: c0, c1, sigma, dlam, [shape_par], [veil], [k]
+    i_sh = 4 if has_shape else None
+    i_v = 4 + has_shape if veil else None
+    i_k = 4 + has_shape + bool(veil) if has_tau else None
 
-    def f(xx, c0, c1, sig, dl, *v):
-        R = conv(xx, sig, dl)
-        vv = v[0] if v else 0.0
-        return (c0 + c1 * (xx - xc)) * (R + vv * R.mean())
+    def conv(xx, p):
+        sig, dl = p[2], p[3]
+        flux = rf * np.exp(-p[i_k] * tau) if has_tau else rf
+        sp = p[i_sh] if has_shape else None
+        at = xx if g is None else g
+        R = convolve_kernel(rw, flux, at - dl, sig, shape, sp)
+        return R if g is None else np.interp(xx, g, R)
 
-    # linear continuum guess given sigma0
-    R0 = conv(x, sigma0, 0.0)
+    def f(xx, *p):
+        R = conv(xx, p)
+        vv = p[i_v] if veil else 0.0
+        return (p[0] + p[1] * (xx - xc)) * (R + vv * R.mean())
+
+    sh0, shlo, shhi = {'gauss': (None, None, None), 'pvoigt': (0.1, 0.0, 1.0),
+                       'supergauss': (2.0, 1.0, 8.0)}[shape]
+    p_init = [np.nan, np.nan, sigma0, 0.0]
+    lb = [-np.inf, -np.inf, 0.15, -1.0]
+    ub = [np.inf, np.inf, 3.5, 1.0]
+    if has_shape:
+        p_init.append(sh0); lb.append(shlo); ub.append(shhi)
+    if veil:
+        p_init.append(0.0); lb.append(-0.3); ub.append(0.9)
+    if has_tau:
+        p_init.append(1.0); lb.append(0.0); ub.append(20.0)
+    # linear continuum guess given the initial shape
+    R0 = conv(x, p_init)
     A = np.column_stack([R0, R0 * (x - xc)])
-    c0, c1 = np.linalg.lstsq(A, y, rcond=None)[0]
-    p0 = [c0, c1, sigma0, 0.0] + ([0.0] if veil else [])
-    lb = [-np.inf, -np.inf, 0.15, -1.0] + ([-0.3] if veil else [])
-    ub = [np.inf, np.inf, 3.5, 1.0] + ([0.9] if veil else [])
+    p_init[0], p_init[1] = np.linalg.lstsq(A, y, rcond=None)[0]
     try:
         with np.errstate(all='ignore'):
-            p, cov = curve_fit(f, x, y, p0=p0, sigma=e, absolute_sigma=e is not None,
+            p, cov = curve_fit(f, x, y, p0=p_init, sigma=e, absolute_sigma=e is not None,
                                bounds=(lb, ub), max_nfev=4000)
     except Exception:
         return out
     perr = np.sqrt(np.diag(cov)) if np.all(np.isfinite(cov)) else None
     if perr is None or not np.all(np.isfinite(p)) or not np.all(np.isfinite(perr)):
         return out
-    # a parameter pinned at a bound is a failed fit
+    # sigma, dlam or veil pinned at a bound is a failed fit; a shape parameter
+    # or absorber scale at its physical limit (eta = 0, k = 0) is allowed
+    check = [2, 3] + ([i_v] if veil else [])
     at_bound = [abs(p[i] - lb[i]) < 1e-6 * max(1, abs(lb[i])) or
-                abs(p[i] - ub[i]) < 1e-6 * max(1, abs(ub[i]))
-                for i in range(2, npar)]
+                abs(p[i] - ub[i]) < 1e-6 * max(1, abs(ub[i])) for i in check]
     if any(at_bound):
         return out
     chi2_nu = np.nan
@@ -726,13 +805,17 @@ def fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err=None, veil=True,
         chi2_nu = float(np.sum(((y - f(x, *p)) / e) ** 2) / (x.size - npar))
     out.update(sigma=p[2], sigma_err=perr[2], fwhm=FWHM_PER_SIGMA * p[2],
                fwhm_err=FWHM_PER_SIGMA * perr[2], dlam=p[3], dlam_err=perr[3],
-               veil=p[4] if veil else 0.0, veil_err=perr[4] if veil else 0.0,
+               veil=p[i_v] if veil else 0.0, veil_err=perr[i_v] if veil else 0.0,
+               shape_par=p[i_sh] if has_shape else np.nan,
+               shape_par_err=perr[i_sh] if has_shape else np.nan,
+               tau_scale=p[i_k] if has_tau else np.nan,
+               tau_scale_err=perr[i_k] if has_tau else np.nan,
                c0=p[0], c1=p[1], chi2_nu=chi2_nu, ok=True)
     return out
 
 
 def fit_template_windows(wav, spec, ref_wave, ref_flux, windows=None, err=None,
-                         veil=True, via_grid=None):
+                         veil=True, via_grid=None, shape='gauss', absorber=None):
     """:func:`fit_srf_template` over a list of windows.
 
     The table is shaped for :meth:`SRFModel.from_lines` (``lam_air`` = window
@@ -741,7 +824,7 @@ def fit_template_windows(wav, spec, ref_wave, ref_flux, windows=None, err=None,
 
     Args:
         windows (list of (lo, hi)): default :func:`template_windows`.
-        via_grid (np.ndarray, optional): passed to :func:`fit_srf_template`.
+        via_grid, shape, absorber: passed to :func:`fit_srf_template`.
 
     Returns:
         pd.DataFrame: one row per window.
@@ -750,7 +833,7 @@ def fit_template_windows(wav, spec, ref_wave, ref_flux, windows=None, err=None,
     rows = []
     for lo, hi in windows:
         r = fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err=err, veil=veil,
-                             via_grid=via_grid)
+                             via_grid=via_grid, shape=shape, absorber=absorber)
         r['name'] = 'T%03.0f-%03.0f' % (lo, hi)
         rows.append(r)
     df = pd.DataFrame(rows)

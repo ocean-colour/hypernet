@@ -725,3 +725,40 @@ notebooks; nothing run):
     covariance undefined (zero residuals), so `fit_line` returns NaN.  The
     tests add 1e-4 seeded noise.
 - `pytest -q`: 86 passed.
+
+### 2026-10-04 -- Build #8: minimal interpolator (Opus 5.5)
+
+- New `hypernet/edinterp.py` (Q1): `interpolate_ed_to_l(wav_irr,
+  irradiance, wav_rad, *, emod=None, srf_irr=None, srf_rad=None,
+  method='srf')`, with `METHODS = ('linear', 'ruddick2023', 'srf', 'cubic',
+  'sinc')`.
+  - `linear` is `np.interp`.
+  - `ruddick2023` is Emod_E(λ_L)·interp(E/Emod_E(λ_E)) (eq. 14, the E SRF on
+    both sides).
+  - `srf` is Emod_L(λ_L)·interp(E/Emod_E(λ_E)) (plan §3, the L SRF in the
+    numerator).
+  - `cubic` is a scipy CubicSpline.  `sinc` is a Lanczos-windowed sinc
+    (a = 8) in fractional-pixel space of the E grid (the grids are not
+    uniform).  Both are nulls.
+  - `emod` is `(lam, flux)` or a dict with `lam` and `E`/`Ed`/`Emod` (e.g. a
+    twin scene).  It is convolved to each grid by
+    `twin.convolve_to_grid` (`model_on_grid`).
+  - The SRF arguments accept a constant, a per-pixel array on their own
+    grid (resampled when `ruddick2023` evaluates the E SRF at the L
+    pixels), a callable or an `SRFModel`.
+  - Outside `wav_irr` the linear-weight methods hold the end values, as
+    `np.interp` does.
+- Tests: `hypernet/tests/test_edinterp.py`, 6, on synthetic 0.01 nm spectra
+  with ~900 narrow lines and HYPSTAR-like grids with a drifting phase:
+  - **with a constant Emod, linear = ruddick2023 = srf = `np.interp` to
+    1e-12**;
+  - **with srf_rad = srf_irr, `srf` equals a pixel-by-pixel direct
+    implementation of eq. 14 to 1e-12** (and `ruddick2023` to 1e-14);
+  - **a spectrum equal to Emod_E returns Emod_L** (and α·Emod_E returns
+    α·Emod_L) to 1e-12;
+  - with E at FWHM 2.3 and L at 2.8, the line residual of truth_L/Ed_L is
+    < 1e-6 for `srf`, and below 1 % of linear's;
+  - the cubic and sinc nulls reproduce smooth functions to 2e-3;
+  - per-pixel SRF arrays give the same results as constants;
+  - error paths (no emod, unknown method).
+- `pytest -q`: 92 passed.

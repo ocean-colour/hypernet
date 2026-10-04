@@ -604,3 +604,124 @@ notebooks; nothing run):
   - ρw in the NIR falls to 10⁻⁶-10⁻⁴ in the Chl cases: OSOAA's Lw is
     elastic only, with no Raman.
 - `pytest -q`: 75 passed (no new tests; the npz is a data product).
+
+### 2026-10-04 -- Build #6: scene composer and ρw library (Opus 5.5)
+
+- New `hypernet/twin.py` (Q2):
+  - `convolve_to_grid(lam_hr, spec_hr, grid, fwhm)`: a Gaussian SRF whose
+    FWHM may be a constant, one value per pixel, or a callable (e.g.
+    `SRFModel.fwhm`).  It preserves constants and line equivalent widths.
+    Task 7's `observe` will reuse it.
+  - `load_fields()` reads `osoaa_fields.npz`.
+  - `rhow_library(fields)`: per water type (chl0.1 / chl1 / chl10 /
+    turbid), the elastic ρw on 5 nm from the OSOAA case SZA 50°, AOT 0.05,
+    plus the control parameters.
+  - `compose_scene(emod, fields, case, water=None, controls=('fl','raman'))`
+    gives the 0.01 nm scene:
+    - Ed = F0(ed_dir·T_direct + ed_dif·T_diffuse);
+    - Ld = F0·ld·T_diffuse;
+    - Lw = ρ_el·Ed/π + Lw_fl + Lw_raman;
+    - Lu = Lw + ρ_eff·Ld (ρ_eff from OSOAA).
+
+    The smooth fields go 5 nm → 0.01 nm by a cubic spline in ln.
+  - `rhow_true(scene, srf_L, grid_L)` = πLw/Ed, with both observed with the
+    L SRF on the L grid.
+- **Controls.**
+  - **Fluorescence:** a Gaussian at 683 nm, 25 nm FWHM.  Its peak ρ is
+    `fluorescence_amplitude(chl)` = 3e-4·Chl^0.7 (6e-5 / 3e-4 / 1.5e-3 for
+    Chl 0.1 / 1 / 10; turbid = Chl 1).  It is applied to Ed smoothed with a
+    5 nm Gaussian, so it carries no Fraunhofer structure.
+  - **Water Raman** (`raman_radiance`): Ed at the excitation wavelength
+    (3357 cm⁻¹ shift), broadened by a 200 cm⁻¹ Gaussian band.  The
+    efficiency (`raman_efficiency`) is C·b_R(exc)/(2a_t(exc) + a_t(λ)), with
+    b_R ∝ exc^−5.5, a_t = a_w + A·Chl^E + a_ys (OSOAA's pure-water and
+    Bricaud tables), and C set so that pure water gives 5e-4 at 550 nm.
+- **Two corrections made while checking the figure**
+  (`hypernet/wiggles/phase1_scene_check.py` →
+  `hypernet/wiggles/figs/phase1/scene_check.png`):
+  1. The fluorescence level first used F0 without the gas transmittance, so
+     the peak read 19 % high near O₂-B/H₂O.  It now uses the smoothed
+     actual Ed.
+  2. A constant Raman efficiency gave NIR Raman *larger* than the elastic ρw
+     (Δρw ≈ 0.001 at 950 nm).  The absorption-limited model fixes the red,
+     and the water-dependent a_t stops the blue being too large in greener
+     water.  Final Raman shares of ρw at 550 / 650 nm: 9 % / 11 % (Chl 0.1),
+     3 % / 4 % (Chl 1), 1 % / 1 % (Chl 10), ~0 (turbid).
+- **A real feature, kept on purpose.**  Fluorescence and Raman are emitted
+  in the water, so they do not cross the O₂/H₂O path, while Ed does.  So
+  πLw/Ed genuinely peaks in the gas bands (e.g. the fluorescence bump at
+  O₂-B, 687 nm).  This is the "true structure at low-transmittance
+  wavelengths" of Kevin's doc, which a correction must not erase.
+- Tests: `hypernet/tests/test_twin.py`, 6:
+  - `convolve_to_grid` keeps constants and equivalent widths, and accepts a
+    callable;
+  - flat Emod and flat fields give flat ρw (1e-10);
+  - the fluorescence control peaks at 683 nm with the stated amplitude and
+    is nil outside;
+  - the Raman excitation is 464.4 nm for 550, and a line reappears at its
+    emission;
+  - the Raman efficiency falls in the red and NIR and with Chl;
+  - a real VEIT scene (Tier 2): every term finite and ≥ 0, the elastic truth
+    = the smooth ρw to 2 %, and the Raman share in the green between 0.5 %
+    and 50 %.
+- `pytest -q`: 81 passed.
+
+### 2026-10-04 -- Build #7: instrument model (Opus 5.5)
+
+- `hypernet/twin.py`, added:
+  - `gaussian_srf(dlam, fwhm)`, a density that integrates to 1.
+  - `observe(lam_hr, spec_hr, grid, srf_model, seed=None, noise=None,
+    true_grid=None, dfwhm=0)`.  It takes an SRFModel, a callable, an array
+    or a constant FWHM.  `true_grid` is where the pixels really sample, for
+    a wavelength error; `noise` is a relative 1-σ per pixel, seeded;
+    `dfwhm` is a width offset.
+  - `load_grids()` and `load_instrument_srfs()`.
+  - The `Case` dataclass and `case_table(instrument)`, 16 cases per
+    instrument:
+    - (i) `i_offset`: equal SRFs (both the L SRF), real grids;
+    - (ii) `ii_mismatch`: the E and L SRFs, E on the L grid;
+    - (iii) `iii_both`;
+    - (iv) rigid E-grid errors of ±0.1 and ±0.3 nm, **plus a linear
+      stretch of ±0.1 nm at 390/870 nm** (Phase 0 8d);
+    - (v) the correction told FWHM_E or FWHM_L ±0.3 nm;
+    - (vi) a wrong Emod: SZA + 10°, water vapour × 2, or low-aerosol fields;
+    - (vii) VEIT per-scan noise for a 6-scan mean.
+- New `hypernet/wiggles/phase1_instrument.py` writes two committed data
+  files.  `setup.py` `package_data` now also ships `data/*.npz`.
+  - **`hypernet/data/hypstar_grids.npz`** (75 kB):
+    - `grid_E_122304` (1536) and `grid_L_122304` (1538) from the VEIT L1A;
+    - `grid_L_122305` from a Release 2 L2B.  **122305 has 1536 L pixels,
+      not 1538: pixel counts are instrument-specific.**  It has no E grid
+      without its L1A, so the cases use 122304's;
+    - `noise_{E,Ld,Lu}_scan`, the flattened per-scan relative scatter (Phase
+      0 Q9).  Medians over 400-900 nm: E 0.41 %, Ld 0.43 %, Lu 0.75 %.
+  - **`hypernet/data/release2_srf_models.json`**: E and Ld SRFModels per
+    instrument × calibration period (keys `HYPSTAR_<id>@<IRR cal date>`,
+    plus `HYPSTAR_<id>` for the latest period; Q6).
+    - Built from **clear-sky** Release 2 sequences only (sky index < 0.05;
+      the fixed-veil Ld widths carry a Ring dependence on sky, per 8d).
+    - Per 10 nm window: the median FWHM and dlam over sequences, with error
+      1.25 MAD/√n, then `SRFModel.from_lines` with the covariance × χ²_ν.
+    - 5-50 sequences per group.  FWHM_E/FWHM_Ld at 450 nm: 122304 (2024-11)
+      2.35/2.81; 122305 2.68/2.77; 122302 2.19/2.72; 120242 2.17/2.66;
+      121222 (2025-03) 2.70/2.73; 121231 2.83/2.88; 122303 2.67/2.76.
+    - χ²_ν is 10-200, because the median errors are small and the windows
+      differ by more than a quadratic allows.  Meta notes the proxy E grids
+      and the ~0.1 nm E bias of the L2 route.
+- **The twin runs every case for 122304 (narrow-E) and 122305 (E ≈ L)**
+  (Q6).
+- Tests added to `test_twin.py` (5):
+  - `gaussian_srf` integrates to 1;
+  - **a ~delta line observed at FWHM 3 nm returns 3.00 nm** (±0.01) through
+    `srf.fit_line`;
+  - a +0.3 nm true-grid error shifts the fitted centroid by −0.3 nm; seeded
+    noise is reproducible and of the right size; `dfwhm` adds in
+    quadrature;
+  - the grids, noise and instrument SRFs load, and keep the narrow-E / E ≈ L
+    split (122304 Ld − E > 0.3 nm, 122305 within 0.15 nm);
+  - the case table contains (i)-(vii), with equal SRFs in (i), no offset in
+    (ii), a stretch of ±0.1 nm at the ends, and so on.
+  - Note: noise-free, exactly Gaussian synthetic lines leave `curve_fit`'s
+    covariance undefined (zero residuals), so `fit_line` returns NaN.  The
+    tests add 1e-4 seeded noise.
+- `pytest -q`: 86 passed.

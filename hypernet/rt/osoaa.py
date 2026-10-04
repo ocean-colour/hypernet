@@ -61,7 +61,8 @@ def exe_path(root=None):
 
 def default_params(wavelength_nm, sza, work_dir, mie_dir=None, phi=90.0, level=3,
                    aot550=0.1, aer_waref_um=0.55, chl=1.0, csed=0.0, ys440=0.0,
-                   det440=0.0, wind=5.0, sea_depth=100.0, pressure=1013.0):
+                   det440=0.0, wind=5.0, sea_depth=100.0, pressure=1013.0,
+                   sed_slope=4.0, sed_mr=1.15, sed_mi=-0.001):
     """OSOAA keyword dict for one wavelength.
 
     Parameters
@@ -87,12 +88,15 @@ def default_params(wavelength_nm, sza, work_dir, mie_dir=None, phi=90.0, level=3
         detritus absorption at 440 nm (m-1).
     wind, sea_depth, pressure : float
         Wind (m s-1), sea depth (m), surface pressure (hPa).
+    sed_slope, sed_mr, sed_mi : float
+        Junge slope and relative refractive index of the mineral particles,
+        used only when ``csed`` > 0 (OSOAA then requires ``SED.JD.*``).
     """
     mie_dir = mie_dir or work_dir
     d = {k: os.path.join(mie_dir, k) for k in ('MIE_AER', 'MIE_HYD', 'SURF')}
     for p in d.values():
         os.makedirs(p, exist_ok=True)
-    return {
+    p = {
         'OSOAA.ResRoot': work_dir,
         'OSOAA.Wa': wavelength_nm / 1000.0,
         'ANG.Thetas': sza,
@@ -102,6 +106,9 @@ def default_params(wavelength_nm, sza, work_dir, mie_dir=None, phi=90.0, level=3
         'AP.Pressure': pressure, 'AP.HR': 8.0, 'AP.HA': 2.0,
         'AER.DirMie': d['MIE_AER'], 'AER.Waref': aer_waref_um, 'AER.AOTref': aot550,
         'AER.Model': 0, 'AER.MMD.MRwa': 1.45, 'AER.MMD.MIwa': -0.001,
+        # required by OSOAA when OSOAA.Wa != AER.Waref (to scale AOT); the same,
+        # non-dispersive index at the reference wavelength
+        'AER.MMD.MRwaref': 1.45, 'AER.MMD.MIwaref': -0.001,
         'AER.MMD.SDtype': 1, 'AER.MMD.LNDradius': 0.10, 'AER.MMD.LNDvar': 0.46,
         'SEA.Depth': sea_depth,
         'HYD.DirMie': d['MIE_HYD'], 'HYD.Model': 1,
@@ -115,6 +122,10 @@ def default_params(wavelength_nm, sza, work_dir, mie_dir=None, phi=90.0, level=3
         'OSOAA.ResFile.Adv.Up': ADV_UP,
         'OSOAA.ResFile.Adv.Down': ADV_DOWN,
     }
+    if csed > 0:
+        p.update({'SED.JD.slope': sed_slope, 'SED.JD.rmin': 0.01, 'SED.JD.rmax': 200.0,
+                  'SED.JD.MRwa': sed_mr, 'SED.JD.MIwa': sed_mi, 'SED.JD.rate': 1.0})
+    return p
 
 
 def build_command(params, root=None):

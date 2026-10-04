@@ -534,3 +534,73 @@ notebooks; nothing run):
   - The HITRAN-, HSRS- and O₃-dependent tests skip when the files are
     absent.
 - `pytest -q`: 75 passed.
+
+### 2026-10-04 -- Build #5: OSOAA smooth fields (Opus 5.5)
+
+- New `hypernet/wiggles/phase1_osoaa_fields.py` (`--veit`, `--grid
+  --workers N`, `--assemble`).
+  - It runs one OSOAA call per wavelength on the 5 nm grid 380-1000 nm (125
+    wavelengths).
+  - Extracted, in units of E_sun:
+    - `ed_dir` and `ed_dif` at 0+ (Flux.txt / π);
+    - `ld`, the sky radiance at 0+ for the HYPSTAR sky view (40° from
+      zenith, RAA 90°);
+    - `lu0m`, Lu(0−) at the refracted angle (28.65°);
+    - `lw` = lu0m·(1 − ρ_F)/n² (Q5);
+    - `lu0p`, Lu(0+) at 40°, for checks.
+  - Each case is saved on its own (resumable) under
+    `$OS_COLOR/hypernet/wiggles/phase1/osoaa_cases/`, with its own
+    Mie/surface database (`osoaa_db/<case>/`, 1.1 GB in all; deletable), so
+    that parallel cases never write the same file.
+  - Run directories are deleted after parsing.
+  - The assembled file is `$OS_COLOR/hypernet/wiggles/phase1/osoaa_fields.npz`
+    (25 cases × 125 wavelengths, plus the `raw_*` arrays, an
+    `extrapolated` mask and the case metadata).  The figure is
+    `hypernet/wiggles/figs/phase1/osoaa_fields.png`.
+- **OSOAA wrapper fixes** (`hypernet/rt/osoaa.py`):
+  - When `OSOAA.Wa` ≠ `AER.Waref`, OSOAA needs the aerosol index at the
+    reference wavelength.  `AER.MMD.MRwaref`/`MIwaref` (1.45, −0.001; no
+    dispersion) are now set.  The 550 nm live test never hit this.
+  - `default_params(csed>0)` now adds the required `SED.JD.*` Junge
+    parameters (slope 4, relative index 1.15 − 0.001i, rate 1).
+- **Cases (Q4).**
+  - The VEIT-like case: SZA 40°, AOT(550) 0.10, Chl 1.
+  - The grid: SZA {30, 50, 70} × AOT(550) {0.05, 0.25} × water {Chl 0.1, 1,
+    10 mg m⁻³; turbid = Chl 1 + 5 mg L⁻¹ sediment + YS(440) 0.1 m⁻¹}.
+- **Timing.**  Only a case's first wavelength is slow (~10 s, for the
+  SZA/wind surface matrices and the first Mie tables); later wavelengths
+  take 0.4-0.7 s.  So:
+  - the VEIT case took 71 s;
+  - the 24-case grid took **6.0 min on 12 workers** (92-218 s per case);
+  - every wavelength succeeded (no NaNs).
+
+  The day-long budget estimated in task 2 was far too pessimistic: that
+  smoke test built a fresh database for every run.
+- **Below 400 nm.**  OSOAA's phytoplankton absorption table
+  (`fic/OSOAA_SEA_PHYT_COEFFS.txt`, Bricaud) starts at 400 nm; the
+  pure-water table starts at 200 nm.
+  - At 380-395 nm OSOAA runs without pigment absorption: ρw is 0.13-0.24 in
+    the Chl cases, and through coupling Ed and Ld step by 2-5 %.  The
+    second difference of ln Ed is ±0.03-0.06 there, against −0.0005 above
+    400 nm.
+  - Every quantity below 405 nm is replaced by a **quadratic-in-ln
+    extrapolation fitted over 405-445 nm**, which keeps the curvature
+    continuous (junction second differences ±0.0003).  The raw values are
+    kept, and the fork is not edited.
+  - Ca K (393 nm) and Ca H (397 nm) are therefore on extrapolated smooth
+    fields, which is fine for multipliers that only need to be smooth.
+- **Clear-floor check** (the sky index at 750 nm, observed clear floor
+  0.011-0.015 sr⁻¹):
+  - The VEIT-like case gives **0.0147**.
+  - AOT 0.05 gives 0.0095 (SZA 30 and 50) and 0.0143 (SZA 70).
+  - AOT 0.25 gives 0.030-0.039: hazy but still "clear" (< 0.05).
+  - The observed floor is bracketed by AOT 0.05-0.10.  The water case does
+    not change the sky (to 4 decimals), as it should not.
+- **Other checks.**
+  - Diffuse fraction at 750 nm: 0.04-0.29.
+  - The effective surface reflectance ρ_eff = (Lu(0+) − Lw)/Ld lies within
+    0.017-0.036 over all cases and wavelengths (Mobley ~0.028).
+  - The turbid case gives ρw(550) ≈ 0.056.
+  - ρw in the NIR falls to 10⁻⁶-10⁻⁴ in the Chl cases: OSOAA's Lw is
+    elastic only, with no Raman.
+- `pytest -q`: 75 passed (no new tests; the npz is a data product).

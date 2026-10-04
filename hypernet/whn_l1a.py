@@ -523,3 +523,81 @@ def match_request(sequences, request):
         return a in b.split(',')
     m['azimuth_ok'] = m.apply(_az, axis=1)
     return m
+
+
+# --- Sky index (Kevin, 2026-10; Ruddick et al. 2006, eqs. 23-24) -------------
+
+#: Centre and half-width (nm) of the band for the sky index.
+SKY_LAM, SKY_HALF = 750.0, 5.0
+#: Class thresholds (Phase 0 Context -> Sky index; JXP, Setup #6): clear below
+#: 0.05 sr^-1 (Ruddick et al. 2006, Kevin), overcast at or above 0.25, and
+#: broken cloud when the within-sequence Ed scan CV at 750 nm exceeds 2 %.
+SKY_CLEAR, SKY_OVERCAST, SKY_BROKEN_CV = 0.05, 0.25, 0.02
+SKY_CLASSES = ('clear', 'cloudy', 'overcast', 'broken')
+
+
+def _band(wave, spec, lam=SKY_LAM, half=SKY_HALF):
+    """Mean over |wave - lam| <= half of spec (wavelength first), per column."""
+    sel = np.abs(np.asarray(wave) - lam) <= half
+    return np.nanmean(np.asarray(spec, dtype=float)[sel], axis=0)
+
+
+def sky_index(irr=None, rad=None, l2=None):
+    """The sky index ``ld_ed_750`` = Ld(750) / Ed(750), in sr^-1.
+
+    Ld and Ed are 745-755 nm means of the sky radiance and the downwelling
+    irradiance.  ~0.02 is a clear blue sky, ~0.3 full overcast (an isotropic
+    sky gives 1/pi).  The index involves no rho_sky.
+
+    Give either an L1A pair or one L1C/L2A/L2B file:
+
+    - ``irr``, ``rad``: :func:`load_l1a_irr` / :func:`load_l1a_rad` outputs.
+      This gives ``ld_ed_750`` (mean sky-scan Ld over mean Ed),
+      ``ed_cv_750`` (std/mean of the per-scan Ed at 750 nm, the broken-cloud
+      flag) and ``ld_ed_750_series`` (one ratio per sky series).
+    - ``l2``: a :func:`load_l1c`, :func:`load_l2a` or :func:`load_l2b`
+      output.  This gives ``ld_ed_750`` only (no per-scan Ed), from the mean
+      over scans/series of ``downwelling_radiance`` and ``irradiance``.
+
+    Returns
+    -------
+    dict
+        ``ld_ed_750``, ``ed_cv_750`` (NaN for ``l2``), ``ld_ed_750_series``
+        (list; empty for ``l2``) and ``source`` (``'L1A'`` or the L2 product).
+    """
+    if irr is not None and rad is not None:
+        Ed = _band(irr['wave'], irr['scans'])
+        Ld = _band(rad['wave'], rad['Ld']['scans'])
+        ser = []
+        sid = np.asarray(rad['Ld']['series_id'])
+        for s_ in np.unique(sid):
+            ser.append(float(np.nanmean(Ld[sid == s_]) / np.nanmean(Ed)))
+        return dict(ld_ed_750=float(np.nanmean(Ld) / np.nanmean(Ed)),
+                    ed_cv_750=float(np.nanstd(Ed) / np.nanmean(Ed)),
+                    ld_ed_750_series=ser, source='L1A')
+    if l2 is not None:
+        Ld = _band(l2['wave'], l2['downwelling_radiance'])
+        Ed = _band(l2['wave'], l2['irradiance'])
+        return dict(ld_ed_750=float(np.nanmean(Ld) / np.nanmean(Ed)), ed_cv_750=np.nan,
+                    ld_ed_750_series=[], source=l2['meta'].get('product_level') or 'L2')
+    raise ValueError('give irr and rad (L1A), or l2')
+
+
+def sky_class(ld_ed_750, ed_cv_750=np.nan):
+    """Sky class from the sky index and the Ed scan CV.
+
+    ``'broken'`` if ``ed_cv_750`` > :data:`SKY_BROKEN_CV` (needs L1A; the
+    index alone cannot see broken cloud, as Ruddick et al. 2006 note), else
+    ``'overcast'`` for ``ld_ed_750`` >= :data:`SKY_OVERCAST`, ``'cloudy'``
+    for >= :data:`SKY_CLEAR`, and ``'clear'`` below.  None if the index is
+    not finite.
+    """
+    if ed_cv_750 is not None and np.isfinite(ed_cv_750) and ed_cv_750 > SKY_BROKEN_CV:
+        return 'broken'
+    if ld_ed_750 is None or not np.isfinite(ld_ed_750):
+        return None
+    if ld_ed_750 >= SKY_OVERCAST:
+        return 'overcast'
+    if ld_ed_750 >= SKY_CLEAR:
+        return 'cloudy'
+    return 'clear'

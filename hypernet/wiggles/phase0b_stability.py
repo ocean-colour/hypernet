@@ -35,7 +35,8 @@ CRITERION = 0.2   # nm, G0(b)
 #: Categorical palette slots in fixed order (dataviz reference palette).
 SLOTS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7',
          '#e34948']
-SKY_MARKERS = {'clear': 'o', 'broken': 's', 'overcast': '^'}
+#: One marker per sky class (whn_l1a.SKY_CLASSES; task 8e).
+SKY_MARKERS = {'clear': 'o', 'cloudy': 's', 'overcast': '^', 'broken': 'D'}
 
 #: The plan's pair comparisons.  Each side selects sequences by any of
 #: system_id, site_code, cal_period; 'first'/'last' pick the earliest/latest
@@ -66,6 +67,7 @@ def per_sequence(models, method):
     m = models[models['method'] == method]
     keys = ['site_code', 'sequence_time', 'system_id', 'cal_period', 'sza_l1a', 'sky',
             'month', 'water_type']
+    keys += [k for k in ('ld_ed_750', 'ed_cv_750') if k in m]
     rows = []
     for k, g in m.groupby(['site_code', 'sequence_time', 'system_id', 'cal_period'],
                           dropna=False):
@@ -143,8 +145,11 @@ def trends(s):
                 continue
             y = g[q].values.astype(float)
             r = dict(system_id=inst, cal_period=cal, quantity=q, n=int(np.isfinite(y).sum()))
-            for name, x in (('sza', g['sza_l1a'].values.astype(float)),
-                            ('season', season.loc[gi].values), ('year', g['year'].values)):
+            xs = [('sza', g['sza_l1a'].values.astype(float)),
+                  ('season', season.loc[gi].values), ('year', g['year'].values)]
+            if 'ld_ed_750' in g:                       # task 8e: the sky index
+                xs.append(('sky', g['ld_ed_750'].values.astype(float)))
+            for name, x in xs:
                 r['slope_' + name], r['slope_%s_err' % name] = _slope(x, y)
             for sky, h in g.groupby('sky'):
                 r['mean_sky_' + sky] = h[q].mean()

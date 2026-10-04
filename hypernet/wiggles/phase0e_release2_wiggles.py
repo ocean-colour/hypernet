@@ -1,4 +1,4 @@
-"""Phase 0, task 8e: do the rho_w wiggles follow the E/L SRF mismatch?
+"""Phase 0, task 8f (originally numbered 8e): do the rho_w wiggles follow the E/L SRF mismatch?
 
 Task 8c found that FWHM_Ld - FWHM_E is ~0.5 nm on HYPSTAR 122302, 122304
 and 120242 ("narrow-E") but ~0 on 121222, 121231, 122303 and 122305

@@ -175,3 +175,27 @@ def test_load_l2b_release2():
     assert d['downwelling_radiance'].shape == (1538, 1)
     assert d['irradiance'].shape == (1538, 1)
     assert int(d['n_valid_scans'][0]) > 0
+
+
+def test_sky_class_boundaries():
+    assert wl.sky_class(0.02) == 'clear'
+    assert wl.sky_class(0.0499) == 'clear'
+    assert wl.sky_class(0.05) == 'cloudy'
+    assert wl.sky_class(0.2499) == 'cloudy'
+    assert wl.sky_class(0.25) == 'overcast'
+    assert wl.sky_class(0.02, ed_cv_750=0.021) == 'broken'     # broken overrides
+    assert wl.sky_class(0.02, ed_cv_750=0.02) == 'clear'
+    assert wl.sky_class(np.nan) is None
+    assert set(wl.SKY_CLASSES) == {'clear', 'cloudy', 'overcast', 'broken'}
+
+
+@needs_wavelengths
+def test_veit_sky_index(veit):
+    s = wl.sky_index(irr=veit['irr'], rad=veit['rad'])
+    assert s['ld_ed_750'] == pytest.approx(0.0270, abs=0.0002)
+    assert s['ed_cv_750'] == pytest.approx(0.0046, abs=0.0005)
+    assert len(s['ld_ed_750_series']) == 2
+    assert min(s['ld_ed_750_series']) < s['ld_ed_750'] < max(s['ld_ed_750_series'])
+    for k in ('l1c', 'l2a'):
+        assert wl.sky_index(l2=veit[k])['ld_ed_750'] == pytest.approx(0.0269, abs=0.0002)
+    assert wl.sky_class(s['ld_ed_750'], s['ed_cv_750']) == 'clear'

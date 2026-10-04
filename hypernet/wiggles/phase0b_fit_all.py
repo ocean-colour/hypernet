@@ -32,7 +32,7 @@ from hypernet import whn_srf  # noqa: E402
 from hypernet.wiggles import DATA_DIR, FIGDIR, OUT, REPO, WIGGLES_DIR  # noqa: F401
 
 KEYS = ['site_code', 'sequence_time', 'system_id', 'cal_period', 'status', 'row',
-        'priority', 'sza_l1a', 'sky', 'month', 'water_type']
+        'priority', 'sza_l1a', 'sky', 'ld_ed_750', 'ed_cv_750', 'month', 'water_type']
 
 
 def sequences(index):

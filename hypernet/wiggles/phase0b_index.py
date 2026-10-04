@@ -18,7 +18,9 @@ and for each delivered sequence reads the L1A attributes to check:
 - the calibration dates against the requested ``cal_dates_rad_irr``;
 - Kevin's attribute bug: ``instrument_calibration_file_rad`` naming an IRR
   file;
-- the SZA and the scan counts.
+- the SZA and the scan counts;
+- the sky index ``ld_ed_750``, ``ed_cv_750`` and class ``sky`` (task 8e), from
+  the delivered L1A, or from the requested L2B file as a fallback.
 
 Per request row (e.g. "VEIT 122304 post-recal") it counts primaries
 delivered, spares delivered and spares substituted for missing primaries.
@@ -61,7 +63,26 @@ def l1a_checks(row):
                    cal_file_rad=f_rad, cal_file_rad_bug='_IRR_' in f_rad,
                    n_scans_lu=rad['Lu']['n_scans'], n_scans_ld=rad['Ld']['n_scans'],
                    n_rad_px=rad['wave'].size)
+    if isinstance(row.get('L1A_IRR'), str) and isinstance(row.get('L1A_RAD'), str):
+        sk = wl.sky_index(irr=irr, rad=rad)            # task 8e: from the L1A
+        out.update(ld_ed_750=sk['ld_ed_750'], ed_cv_750=sk['ed_cv_750'],
+                   sky_source='L1A')
     return out
+
+
+def l2b_sky(row):
+    """Fallback sky index from the requested Release 2 L2B file (no Ed CV)."""
+    f = row.get('file')
+    if not isinstance(f, str):
+        return {}
+    try:
+        p = wl.release2_path(row['site'], row['sequence_time'], f)
+        if not os.path.exists(p):
+            return {}
+        sk = wl.sky_index(l2=wl.load_l2b(p))
+        return dict(ld_ed_750=sk['ld_ed_750'], ed_cv_750=np.nan, sky_source='L2B')
+    except Exception:
+        return {}
 
 
 def build(root=None):
@@ -71,7 +92,10 @@ def build(root=None):
     idx = wl.match_request(seqs, request)
     checks = []
     for _, r in idx.iterrows():
-        checks.append(l1a_checks(r) if r['status'] != 'missing' else {})
+        c = l1a_checks(r) if r['status'] != 'missing' else {}
+        if 'ld_ed_750' not in c:
+            c.update(l2b_sky(r))                        # L2B value as fallback
+        checks.append(c)
     idx = pd.concat([idx.reset_index(drop=True), pd.DataFrame(checks)], axis=1)
     # instrument and calibration consistency (requested rows only)
     idx['instrument_ok'] = np.where(idx['status'] == 'delivered',
@@ -83,6 +107,12 @@ def build(root=None):
     idx['cal_period'] = np.where(idx['status'] != 'missing', cal_got, cal_req)
     idx['water_type'] = idx['site_code'].map(WATER_TYPE)
     idx['month'] = idx['sequence_time'].str[4:6].astype(float)
+    # task 8e: the computed sky class replaces the (blank) request column
+    for c in ('ld_ed_750', 'ed_cv_750', 'sky_source'):
+        if c not in idx:
+            idx[c] = np.nan
+    idx['sky_request'] = idx['sky']
+    idx['sky'] = [wl.sky_class(a, b) for a, b in zip(idx['ld_ed_750'], idx['ed_cv_750'])]
     return idx, products
 
 
@@ -108,7 +138,7 @@ def summarise(idx):
             n_cal_mismatch=int((d['cal_ok'] == False).sum()),  # noqa: E712
             n_azimuth_mismatch=int((d['azimuth_ok'] == False).sum()),  # noqa: E712
             n_cal_attr_bug=int(d.get('cal_file_rad_bug', pd.Series(dtype=bool)).eq(True).sum()),
-            n_sky_tagged=int(g['sky'].notna().sum())))
+            **{'n_' + k: int((d['sky'] == k).sum()) for k in wl.SKY_CLASSES}))
     ex = idx[idx['status'] == 'extra']
     rows.append(dict(row='(unrequested)', site=','.join(sorted(ex['site_code'].dropna().unique())),
                      instrument=','.join(sorted(ex.get('system_id', pd.Series(dtype=str))

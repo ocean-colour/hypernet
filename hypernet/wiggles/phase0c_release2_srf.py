@@ -153,8 +153,21 @@ def run(ref, gE, limit=None, verbose=True):
     return cat(temps), cat(mods), pd.DataFrame(status)
 
 
+def add_sky(models):
+    """Attach the task 8e sky index (``phase0_sky_index.csv``) if it exists."""
+    p = os.path.join(WIGGLES_DIR, 'phase0_sky_index.csv')
+    if not os.path.exists(p):
+        return models
+    sk = pd.read_csv(p, dtype={'sequence_time': str})
+    sk['site_code'] = sk['site'].str[:-2]
+    m = models.drop(columns=[c for c in ('sky', 'ld_ed_750') if c in models])
+    return m.merge(sk[['site_code', 'sequence_time', 'ld_ed_750', 'sky']],
+                   on=['site_code', 'sequence_time'], how='left')
+
+
 def stability(models):
     """The task 11 analysis on the Release 2 models (Ld and E)."""
+    models = add_sky(models)
     s = stab.per_sequence(models, 'template')
     st, tr, pr = stab.group_stats(s), stab.trends(s), stab.pairs(s)
     st = st[st['channel'].isin(['E', 'Ld'])]
@@ -263,7 +276,8 @@ def main(argv=None):
           .to_string(index=False, float_format='%.3f'))
     print('\ntrends (slopes per deg SZA / per season unit / per year):')
     print(tr[['system_id', 'cal_period', 'quantity', 'n', 'slope_sza', 'slope_sza_err',
-              'slope_season', 'slope_season_err', 'slope_year', 'slope_year_err']]
+              'slope_season', 'slope_season_err', 'slope_year', 'slope_year_err'] +
+             [c for c in ('slope_sky', 'slope_sky_err') if c in tr]]
           .to_string(index=False, float_format='%.4f'))
 
 

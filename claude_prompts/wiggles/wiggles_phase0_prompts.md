@@ -234,7 +234,7 @@ goes into the function first.
     site and instrument pairs).  Report a preliminary G0(b) for the L channel
     in Q&A.  Log your work.
 
-8e. **ρw wiggles by instrument class, from Release 2 (Q&A Q12).**
+8f. **ρw wiggles by instrument class, from Release 2 (Q&A Q12).**
     `hypernet/wiggles/phase0e_release2_wiggles.py`: for the 224 requested L2B
     files, measure the ρw wiggle at the Fraunhofer lines (the site's agreed
     product via `whn_explore.product_for`): the relative residual within
@@ -796,13 +796,13 @@ FWHM_Ld − FWHM_E at 450 nm, by instrument (calibration period):
 the instrument split directly.  ρw'' at the Fraunhofer lines (the task 12
 excess metric) should be ~5× larger on 122302/122304/120242 than on the
 E ≈ L instruments.
-*Default: add a short task 8e to compute the line ρw'' excess per sequence
+*Default: add a short task 8f to compute the line ρw'' excess per sequence
 for the 224 requested L2B files and compare by instrument, before Phase 1
 Setup.  It is cheap, reuses `phase0b_budget.rho2_baseline`, and would be a
 strong, independent check of H2.*
 >A. Yes, use your default
 
-### Build #8e -- 2026-10-03 (Opus 5.5): ρw wiggles follow the E/L SRF mismatch
+### Build #8f -- 2026-10-03 (Opus 5.5): ρw wiggles follow the E/L SRF mismatch
 
 Source: the same 224 Release 2 L2B files, with each site's agreed ρw
 product.  The script is `python -m hypernet.wiggles.phase0e_release2_wiggles`,
@@ -854,6 +854,58 @@ sequence's H2 prediction comes from its own E and Ld line fits.
   on the narrow-E instruments, at about the predicted amplitude.  On the
   E ≈ L instruments H2 is negligible, and a smaller line-wiggle floor
   remains to be explained.
+
+### Build #8e -- 2026-10-03 (Opus 5.5): sky index of the request, and SRF vs sky
+
+Source: `python -m hypernet.wiggles.phase0_sky`, which writes
+`hypernet/wiggles/phase0_sky_index.csv`.  The index comes from the Release 2
+L2B of each requested sequence; "broken" needs L1A, so it is not assigned
+here.
+
+- **Class counts per request row** (clear < 0.05 ≤ cloudy < 0.25 ≤
+  overcast):
+
+  | row | clear | cloudy | overcast |
+  |---|---:|---:|---:|
+  | BEFR 122302 | 24 | 4 | 2 |
+  | THFR 122302 | 26 | 4 | 0 |
+  | MAFR 121231 | 27 | 5 | 1 |
+  | MAFR 122303 | 11 | 0 | 1 |
+  | VEIT 122304 pre-recal | 18 | 11 | 1 |
+  | VEIT 122304 post-recal | 23 | 6 | 1 |
+  | VEIT 122305 | 24 | 6 | 0 |
+  | GAIT 120242 | 5 | 4 | 0 |
+  | GAIT 121222 pre / post | 8 / 8 | 2 / 2 | 0 / 0 |
+
+  Totals: 174 clear, 44 cloudy, 6 overcast.  The quantiles (0.013 / 0.024 /
+  0.114 at 10 / 50 / 90 %) reproduce Setup #6.
+- **Is every instrument covered for clear and cloudy across SZA?  Not
+  quite.**
+  - 122302 has both classes in all four SZA bins.
+  - Bins missing one class:
+    - 122304, 122305 and 121222: SZA ≤ 35° (no cloudy case);
+    - 121231: SZA > 65°;
+    - 122303: 35-50°;
+    - 120242: 35-50° and 50-65°.
+  - 122303 has only 1 non-clear case in 12, and 120242 only 9 sequences in
+    all.
+  - When Kevin swaps spares, cloudy low-SZA cases for 122304/122305/121222
+    and more cloudy 122303 cases would help most.
+- **The SRF against the sky index** (Release 2 template fits of task 8c, now
+  merged with the index; `phase0c_stability_trends.csv`, `slope_sky`):
+  - FWHM_E: no dependence (slopes within 2σ of 0 everywhere).
+  - **FWHM_Ld falls as the sky clouds over, on every instrument:**
+    −0.18 to −0.46 nm per unit index, at 2-4σ where the groups are large
+    (122304: −0.30 ± 0.08 and −0.26 ± 0.11; 122302: −0.18 ± 0.08; 121231:
+    −0.32 ± 0.11; 122305: −0.37 ± 0.12).
+  - From clear (0.02) to overcast (0.3), that is a 0.05-0.10 nm narrower
+    apparent Ld width.  It is below the 0.2 nm G0(b) criterion, but
+    systematic.
+  - Likely cause: the **Ring effect**.  Rotational Raman fills in the
+    Fraunhofer lines more in a clear Rayleigh sky than under cloud.
+    Shallower lines fitted without a veil read as wider.  The sign matches.
+    Task 8d(iii)/(veil) can test this by freeing the veil on Release 2
+    Ld.  It also bears on Phase 3's Ring covariate.
 
 ## Logs
 
@@ -1527,9 +1579,9 @@ sequence's H2 prediction comes from its own E and Ld line fits.
     instrument.
 - `pytest -q`: 58 passed.
 
-### 2026-10-03 -- Build #8e (Opus 5.5)
+### 2026-10-03 -- Build #8f (Opus 5.5)
 
-- JXP accepted Q12.  I added task 8e to the Build list and did it.
+- JXP accepted Q12.  I added task 8f to the Build list and did it.
 - New `hypernet/wiggles/phase0e_release2_wiggles.py`.  It reuses
   `phase0a_budget_veit` (`_residual`, `_h2_profile`, `_project`, `_rms`) and
   `phase0b_budget.rho2_baseline`.
@@ -1540,10 +1592,60 @@ sequence's H2 prediction comes from its own E and Ld line fits.
   - It writes `release2_wiggles_lines.parquet` under `$OS_COLOR` and the
     committed `phase0e_*.csv` and `figs/phase0/phase0e_wiggles.png`.
   - The run takes about 2 minutes for 224 sequences.
-- Results are in the Build #8e Q&A.  The narrow-E instruments show the
+- Results are in the Build #8f Q&A.  The narrow-E instruments show the
   line-selective ρw excess H2 predicts: G band ×2.5-3.1 in the same-site
   pairs, Na D ×0.8-0.9.  An E ≈ L control pair shows only a uniform ×0.5-0.8.
   An unexplained 0.5-2 % line-residual floor remains on the E ≈ L
   instruments.
 - `pytest -q`: 58 passed.  The new module is covered by the
   wiggles-import test.
+
+### 2026-10-03 -- Renumbered the ρw-wiggles task to 8f (Opus 5.5)
+
+- Phase 1 Q&A Q8, accepted: two tasks were numbered 8e.  The Sky-index
+  task, added by the Setup #6 session and referenced as 8e in tasks 9 and 11
+  and in `wiggles_prompts.md`, keeps **8e**.  The ρw-wiggles-by-instrument
+  task (done 2026-10-03) is now **8f**: its Build entry, its Q12 default
+  text, its Q&A heading ("Build #8f") and its log entry.
+- The script keeps its name, `hypernet/wiggles/phase0e_release2_wiggles.py`,
+  as do its outputs `phase0e_*.csv`; its docstring now says task 8f.
+- Entries older than this note that say "8e" about the ρw wiggles mean 8f.
+
+### 2026-10-03 -- Build #8e: sky index (Opus 5.5)
+
+- `hypernet/whn_l1a.py`:
+  - `SKY_LAM`/`SKY_HALF` (750 ± 5 nm) and the thresholds `SKY_CLEAR` 0.05,
+    `SKY_OVERCAST` 0.25 and `SKY_BROKEN_CV` 0.02;
+  - `sky_index(irr=, rad=)` from an L1A pair (`ld_ed_750`, `ed_cv_750`, and
+    one ratio per sky series), or `sky_index(l2=)` from L1C/L2A/L2B
+    (`ld_ed_750` only);
+  - `sky_class(ld_ed_750, ed_cv_750)` returns clear / cloudy / overcast /
+    broken, with broken taking precedence (it needs the L1A Ed CV).
+- New `hypernet/wiggles/phase0_sky.py`, promoted from
+  `wavecal/ld_ed_750_request.py`.  It writes
+  `hypernet/wiggles/phase0_sky_index.csv` (row, site, sequence_time,
+  azimuth, sza, raa, instrument, ld_ed_750, sky) and prints class counts,
+  quantiles, the clear floor by SZA and site, and per-instrument coverage.
+  `docs/wiggles_data_request.csv` is untouched.
+- 0b scripts updated:
+  - `phase0b_index.py` takes `ld_ed_750`/`ed_cv_750` from the delivered
+    L1A, falling back to the requested L2B (`sky_source`).  `sky` is now the
+    computed class (the blank request column is kept as `sky_request`), and
+    the summary's `n_sky_tagged` is replaced by
+    `n_clear/n_cloudy/n_overcast/n_broken`.  On the current tree, VEIT gets
+    0.0270 / 0.46 % / clear from L1A, and the 224 requested rows get their
+    L2B values.
+  - `phase0b_fit_all.py` carries `ld_ed_750` and `ed_cv_750` into its
+    tables.
+  - `phase0b_stability.py` adds `slope_sky` (against `ld_ed_750`), and its
+    markers cover all four classes.
+  - `phase0c_release2_srf.py` merges the index (`add_sky`) and prints the
+    sky slopes.
+- Tests:
+  - `test_sky_class_boundaries` (Tier 1);
+  - `test_veit_sky_index` (Tier 2): 0.0270 from L1A, 0.46 % Ed CV, 0.0269
+    from L1C/L2A, class clear.
+  - `pytest -q`: 60 passed.
+- Results are in the Build #8e Q&A: class counts per row, coverage gaps by
+  SZA, and FWHM_Ld narrowing by 0.05-0.10 nm from clear to overcast
+  (a Ring signature?).

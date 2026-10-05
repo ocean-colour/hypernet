@@ -264,13 +264,27 @@ and what it does to real features.
 
 *Gate G1:* the `srf` method reduces the line-region ρw'' error to the
 away-from-lines level (target > 80 % reduction in cases (ii)–(iii)), degrades
-gracefully under (iv)–(vi), and leaves the fluorescence and Raman controls
-unchanged to within the noise floor of case (vii). If `ruddick2023` already
+gracefully under (iv)–(vi), and changes the fluorescence and Raman controls'
+ρw'' by no more than the linear method does, and by ≪ the controls themselves
+in case (iii) (the controls' ρw'' is itself below the single-sequence noise).
+If `ruddick2023` already
 achieves this in case (iii) at the VEIT SRF difference, H2 is a refinement
 rather than a requirement and Phase 2 defaults to eq. (14).
 
+**G1 outcome (2026-10-04):** passed for narrow-E instruments. `srf` removes
+~100 % of the mismatch error in (ii)–(iii); `ruddick2023` removes 0 %, so H2 is
+required. Tolerances for 80 %: E wavelength scale ≤ 0.05 nm relative to Emod,
+FWHM_E ≲ 0.07 nm, FWHM_L ≲ 0.1 nm; Emod errors are harmless. On E ≈ L
+instruments the correction gains nothing and is fragile. See
+`claude_prompts/wiggles/gate_G1.md`.
+
 ### Phase 2 — Code
 
+- **Default method (G1):** `srf`, applied where the measured ΔFWHM ≥ 0.15 nm;
+  `linear` otherwise.
+- **E wavelength scale (G1):** fit a shift and linear stretch of E against the
+  HSRS-based Emod (per sequence or per calibration period) to ≤ 0.05 nm, and
+  carry its uncertainty.
 - `hypernet/wavecal/` (module name to be settled): the SRF model, the
   Fraunhofer-line self-calibration (centroids and FWHM(λ) from a spectrum and
   a line list), the Emod builder (HSRS × HAPI × O₃ for a given SZA and
@@ -310,7 +324,10 @@ VEIT the PANTHYR system (VEIT_P, separate TriOS RAMSES E and L radiometers, ~10 
 gives an L2 ρw'' with different wiggle physics; no data are requested for it.
 
 *Gate G3:* the line-region ρw'' excess is reduced by the amount Phase 1
-predicts for the measured SRF difference, on most sequences and instruments,
+predicts for the measured SRF difference (the noise row of
+`hypernet/wiggles/phase1_prediction.csv`, observable excess
+√(rms²_line − rms²_away) of ρw'' at h = 1 nm; e.g. 60–75 % at ΔFWHM 0.5 nm,
+≈ 0 below 0.1 nm), on most sequences and instruments,
 without a detectable change in the control regions. If the residual after
 correction still correlates with Ed''/Ed, the SRF model (Gaussian, quadratic
 FWHM) is revisited before the tech note is written.

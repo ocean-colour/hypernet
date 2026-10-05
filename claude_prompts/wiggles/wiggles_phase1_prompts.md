@@ -1038,3 +1038,17 @@ required** (`ruddick2023` removes 0 % of the mismatch).
   method and threshold, and the E shift/stretch fit), and the G3 yardstick.
   **Not applied** pending JXP's approval.
 - No code changes; `pytest -q` not rerun (92 passed at task 11).
+
+### 2026-10-05 -- Gate #12 answers applied (Opus 5.5)
+
+- JXP accepted all four Gate #12 defaults.  The report stays at
+  `claude_prompts/wiggles/gate_G1.md`.
+- Applied the four §4 edits to `docs/wiggles_planning.md`:
+  - (a) G1's control wording;
+  - (b) the G1 outcome paragraph;
+  - (c) the two Phase 2 bullets (default `srf` above ΔFWHM 0.15 nm; an E
+    shift + stretch fit to ≤ 0.05 nm);
+  - (d) the G3 yardstick (`phase1_prediction.csv`, observable excess at
+    h = 1 nm).
+- Threshold 0.15 nm and the non-Gaussian SRF check carried into the Phase 2
+  doc (tasks 3 and 9b).  **Phase 1 is closed.**

@@ -224,6 +224,10 @@ refinement rather than a requirement and Phase 2 defaults to eq. (14).
     `docs/wiggles_planning.md` §4 in Q&A and apply them only if JXP approves.
     Log your work.
 
+### Report back
+
+13. **Slides**  Prepare a slide presentation that reports on Phase 1 -- the Twin Experiment.  Describe what was done, why, and the main reesults.  Use figures when you can.  Put a powerpoint in `slides/wiggles_phase1.pptx`.  I have LibreOffice installed on my laptop.  Do not use fonts smaller than 20pt.  Use Opus 5.5 and log your work.
+
 ## Q&A
 
 ### Setup #1 -- 2026-10-03 (Opus 5.5)
@@ -1052,3 +1056,51 @@ required** (`ruddick2023` removes 0 % of the mismatch).
     h = 1 nm).
 - Threshold 0.15 nm and the non-Gaussian SRF check carried into the Phase 2
   doc (tasks 3 and 9b).  **Phase 1 is closed.**
+
+### 2026-10-05 -- Report #13: Phase 1 slides (Opus 5.5)
+
+- Wrote `slides/wiggles_phase1.pptx` (the `slides/` folder JXP created at the
+  repo root): 17 slides, 16:9 wide (13.33 × 7.5 in).  **No text below
+  20 pt**: the slide XML's sizes are 2000-4400.  Every slide has speaker
+  notes.  Order:
+  1. title;
+  2. why a twin (H1 vs H2);
+  3. the three methods and their equations;
+  4. how the twin is built (five steps);
+  5. a scene and its controls (`scene_check.png`);
+  6. the two instruments and 16 cases;
+  7. ρw'' at Ca H/K, Hα and O₂-A (`twin_rho2_lines.png`);
+  8. every case and method (`twin_reduction.png`);
+  9. the 122304 results table;
+  10. 122305 callouts (incl. "H1 does not explain the E ≈ L floor");
+  11. controls (`twin_controls.png`, plus the distortion table);
+  12. degradation (`twin_degradation.png`);
+  13. the tolerance callouts;
+  14. the prediction (`twin_prediction.png`);
+  15. the G3 yardstick table and per-line gains;
+  16. the gate G1 verdict and the Phase 2 default;
+  17. open concerns and Phase 2.
+- **Numbers are not hand-typed.**  `slides/wiggles_phase1_data.py` reads
+  `phase1_twin_metrics.csv`, `phase1_controls.csv`, `phase1_degradation.csv`,
+  `phase1_prediction.csv` and the figure aspect ratios, and writes
+  `slides/wiggles_phase1_data.json`.  `slides/build_wiggles_phase1.js`
+  (pptxgenjs, the Phase 0 deck's palette and helpers) builds the deck.
+  Rebuild with:
+
+      python slides/wiggles_phase1_data.py
+      NODE_PATH=$(conda run -n slides npm root -g) conda run -n slides node slides/build_wiggles_phase1.js
+
+- **QA:**
+  - The pptx skill's `validate.py` passes.
+  - I rendered all 17 slides through LibreOffice and inspected them.
+    First-render fixes: two titles wrapped (slides 9 and 14, shortened); the
+    "→" in the G1 verdict rendered badly ("No: H2 needed"); the last
+    slide's cards were too tall.
+  - The embedded figures keep their own (smaller) axis labels; they are
+    images, not slide text.
+- **Correction found while building:**
+  - Over all four (v) cases, srf on 122305 is **6-8×** worse than linear.
+    The gate report said "5-7×", which I took from two of the four cases.
+    Fixed in `gate_G1.md`; the "5-7×" in the task 9 log above is
+    superseded.
+  - The (iii) linear error rounds to 1.4×10⁻⁴ on the slides (1.45e-4).

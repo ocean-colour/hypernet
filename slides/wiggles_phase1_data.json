@@ -1,0 +1,210 @@
+{
+ "images": {
+  "osoaa_fields": {
+   "path": "/Users/xavier/Oceanography/python/hypernet/hypernet/wiggles/figs/phase1/osoaa_fields.png",
+   "aspect": 1.375
+  },
+  "scene_check": {
+   "path": "/Users/xavier/Oceanography/python/hypernet/hypernet/wiggles/figs/phase1/scene_check.png",
+   "aspect": 1.4666666666666666
+  },
+  "twin_controls": {
+   "path": "/Users/xavier/Oceanography/python/hypernet/hypernet/wiggles/figs/phase1/twin_controls.png",
+   "aspect": 1.5294117647058822
+  },
+  "twin_degradation": {
+   "path": "/Users/xavier/Oceanography/python/hypernet/hypernet/wiggles/figs/phase1/twin_degradation.png",
+   "aspect": 2.2666666666666666
+  },
+  "twin_prediction": {
+   "path": "/Users/xavier/Oceanography/python/hypernet/hypernet/wiggles/figs/phase1/twin_prediction.png",
+   "aspect": 3.076923076923077
+  },
+  "twin_reduction": {
+   "path": "/Users/xavier/Oceanography/python/hypernet/hypernet/wiggles/figs/phase1/twin_reduction.png",
+   "aspect": 1.625
+  },
+  "twin_rho2_lines": {
+   "path": "/Users/xavier/Oceanography/python/hypernet/hypernet/wiggles/figs/phase1/twin_rho2_lines.png",
+   "aspect": 1.8571428571428572
+  }
+ },
+ "t9_rows": [
+  [
+   "(i) grid offset only",
+   "5.6×10⁻⁶",
+   "99 %",
+   "99 %"
+  ],
+  [
+   "(ii) SRF mismatch only",
+   "1.5×10⁻⁴",
+   "0 %",
+   "100 %"
+  ],
+  [
+   "(iii) offset + mismatch",
+   "1.4×10⁻⁴",
+   "−6 %",
+   "100 %"
+  ],
+  [
+   "(iv) E λ shift 0.1 nm",
+   "1.5×10⁻⁴",
+   "−6 %",
+   "62 %"
+  ],
+  [
+   "(iv) E λ shift 0.3 nm",
+   "1.9×10⁻⁴",
+   "−3 %",
+   "13 %"
+  ],
+  [
+   "(v) FWHM_E off 0.3 nm",
+   "1.4×10⁻⁴",
+   "−9 %",
+   "6 %"
+  ],
+  [
+   "(vi) Emod PWV × 2",
+   "1.4×10⁻⁴",
+   "−6 %",
+   "99 %"
+  ],
+  [
+   "(vii) VEIT noise",
+   "1.9×10⁻⁴",
+   "−4 %",
+   "45 %"
+  ]
+ ],
+ "t9": {
+  "true_line": "2.6×10⁻⁵",
+  "lin_iii": "1.4×10⁻⁴",
+  "lin_i": "5.6×10⁻⁶",
+  "offset_frac": "4 %",
+  "ratio_lin_true": "6×",
+  "lin5_iii": "1.2×10⁻⁵",
+  "rud5_iii": "−128 %",
+  "srf5_iii": "100 %",
+  "srf5_v": "6–8×",
+  "rho5_i": "0.08 %",
+  "rho5_iii": "0.46 %",
+  "lo_lin_vii": "1.70",
+  "lo_srf_vii": "1.14"
+ },
+ "t10": {
+  "max_over_noise": "0.20",
+  "amp_fl": "0.17",
+  "amp_raman": "0.05",
+  "rows": [
+   [
+    "linear",
+    "22 %",
+    "44 %"
+   ],
+   [
+    "ruddick2023",
+    "31 %",
+    "46 %"
+   ],
+   [
+    "srf",
+    "0 %",
+    "0 %"
+   ]
+  ]
+ },
+ "t10d": {
+  "shift05": "80 %",
+  "shift10": "62 %",
+  "shift30": "13 %",
+  "stretch05": "84 %",
+  "e05": "86 %",
+  "e10": "73 %",
+  "l10": "82 %",
+  "emod_min": "98 %"
+ },
+ "t11": {
+  "dfwhm": [
+   "0.1",
+   "0.2",
+   "0.3",
+   "0.5",
+   "0.7",
+   "1"
+  ],
+  "rows": [
+   [
+    "noise only",
+    "11 %",
+    "31 %",
+    "52 %",
+    "74 %",
+    "84 %",
+    "90 %"
+   ],
+   [
+    "+ 0.05 nm λ and FWHM errors",
+    "3 %",
+    "21 %",
+    "39 %",
+    "62 %",
+    "73 %",
+    "80 %"
+   ],
+   [
+    "perfect correction",
+    "71 %",
+    "80 %",
+    "87 %",
+    "92 %",
+    "94 %",
+    "96 %"
+   ]
+  ],
+  "lines": [
+   [
+    "Ca K",
+    "0.32",
+    "78 %"
+   ],
+   [
+    "G band",
+    "0.21",
+    "65 %"
+   ],
+   [
+    "Hβ",
+    "0.13",
+    "43 %"
+   ],
+   [
+    "Na D",
+    "0.09",
+    "33 %"
+   ],
+   [
+    "O₂-B",
+    "0.25",
+    "36 %"
+   ],
+   [
+    "O₂-A",
+    "0.69",
+    "24 %"
+   ],
+   [
+    "Hα",
+    "0.10",
+    "13 %"
+   ],
+   [
+    "H₂O",
+    "0.43",
+    "1 %"
+   ]
+  ]
+ }
+}

@@ -340,6 +340,52 @@ notebooks; nothing run):
    that session is no longer editing the file.*
 >A. Use your default
 
+### Gate #12 -- 2026-10-04 (Opus 5.5)
+
+The verdict is in `claude_prompts/wiggles/gate_G1.md`: **pass for narrow-E
+instruments; Phase 2 default `srf` above ΔFWHM 0.15 nm, `linear` below; H2 is
+required** (`ruddick2023` removes 0 % of the mismatch).
+
+**Questions for JXP** (each has a default; say "defaults" to accept them all)
+
+1. **Report location.**  *Default: keep `claude_prompts/wiggles/gate_G1.md`
+   (outside `docs/`, where the Phase 2 doc already expects it).*
+>A. Yes, that is fine
+2. **Plan §4 edits.**  *Default: apply these four to
+   `docs/wiggles_planning.md` once you approve:*
+   - (a) *Phase 1, the G1 paragraph: replace "leaves the fluorescence and
+     Raman controls unchanged to within the noise floor of case (vii)" with
+     "changes the fluorescence and Raman controls' ρw'' by no more than the
+     linear method does, and by ≪ the controls themselves in case (iii)
+     (the controls' ρw'' is itself below the single-sequence noise)".*
+   - (b) *Phase 1, after the G1 paragraph, add the outcome: "**G1 outcome
+     (2026-10-04):** passed for narrow-E instruments.  `srf` removes ~100 %
+     of the mismatch error in (ii)-(iii); `ruddick2023` removes 0 %, so H2 is
+     required.  Tolerances for 80 %: E wavelength scale ≤ 0.05 nm relative to
+     Emod, FWHM_E ≲ 0.07 nm, FWHM_L ≲ 0.1 nm; Emod errors are harmless.  On
+     E ≈ L instruments the correction gains nothing and is fragile.  See
+     `claude_prompts/wiggles/gate_G1.md`."*
+   - (c) *Phase 2: add two bullets.*
+     - *"Default method `srf`, applied where the measured ΔFWHM ≥ 0.15 nm;
+       `linear` otherwise."*
+     - *"E wavelength scale: fit a shift and linear stretch of E against
+       the HSRS-based Emod (per sequence or per calibration period) to
+       ≤ 0.05 nm, and carry its uncertainty."*
+   - (d) *Phase 3, the G3 paragraph: after "by the amount Phase 1 predicts
+     for the measured SRF difference", add "(the noise row of
+     `hypernet/wiggles/phase1_prediction.csv`, observable excess
+     √(rms²_line − rms²_away) of ρw'' at h = 1 nm; e.g. 60-75 % at
+     ΔFWHM 0.5 nm, ≈ 0 below 0.1 nm)".*
+>A. That is all ok
+3. **The threshold.**  *Default: 0.15 nm, from the twin's break-even under
+   realistic knowledge (gate report, "Why 0.15 nm").  Phase 2 revisits it
+   once the L1A E SRFs and the punpy uncertainties exist.*
+>A. Ok
+4. **A non-Gaussian SRF check** (gate concern 3).  *Default: add it as a
+   small Phase 2 task (twin truth with the Phase 0 pvoigt/supergauss shape,
+   Gaussian correction), not a new Phase 1 task.*
+>A. Agreed
+
 ## Logs
 
 ### 2026-10-03 -- Setup #1 (Opus 5.5)
@@ -762,3 +808,233 @@ notebooks; nothing run):
   - per-pixel SRF arrays give the same results as constants;
   - error paths (no emod, unknown method).
 - `pytest -q`: 92 passed.
+
+### 2026-10-04 -- Analysis #9: cases × methods (Opus 5.5)
+
+- New `hypernet/wiggles/phase1_twin.py` (`--workers`, `--scenes`).
+  - The grid: 2 instruments (122304 narrow-E, 122305 E ≈ L) × 16 cases
+    (`twin.case_table`) × 25 OSOAA scenes × 5 methods (linear, cubic, sinc,
+    ruddick2023, srf) × h = 1 and 5 nm: **8,000 metric rows in about 1
+    minute on 12 workers** (~5 s per scene).
+  - Per scene: the 0.01 nm scene with the fluorescence and Raman controls;
+    the truth (`rhow_true`, L SRF on the L grid); Lu and Ld through the L SRF.
+  - Per case: E through the case's E SRF at its true grid, reported on the
+    nominal grid; for case vii, VEIT per-scan noise/√6 on E, Lu and Ld.  The
+    correction gets the case's SRFs (±0.3 nm in v) and an Emod: the scene's
+    own high-resolution Ed (a perfect model), or a case-vi variant.
+  - ρw = π(Lu − ρ_eff·Ld)/Ed_L, then ρw'' by h-second differences; the metric
+    is rms(ρw'' − ρw''_true) within ±5 nm of the plan's ten lines and away
+    from them, over 400-900 nm, plus per line.
+  - Outputs: `$OS_COLOR/hypernet/wiggles/phase1/twin_metrics.parquet`;
+    `hypernet/wiggles/phase1_twin_metrics.csv` (medians over scenes, with
+    `reduction` = 1 − rms/rms_linear and `line_over_away`); figures
+    `figs/phase1/twin_rho2_lines.png` and `twin_reduction.png`.
+- **Results, 122304 (narrow-E), h = 1 nm**, medians over the 25 scenes:
+  - The true line structure (controls and real features) is rms ρw''
+    2.6e-5.  The linear method's line error is **1.45e-4, about 6× the true
+    structure**.
+  - **(ii)/(iii) SRF mismatch: srf removes ~100 %** (1.45e-4 → 7e-8, the
+    numerical floor).  `ruddick2023`, `cubic` and `sinc` remove **0 %** (or
+    6 % worse).  Eq. 14 cannot fix a width mismatch, as plan §3 predicted.
+  - **(i) offset only:** the linear error is only **5.6e-6, ~4 % of the
+    mismatch error** (matching Phase 0's ~3 %).  `ruddick2023` and `srf`
+    remove 99 % of it, and even `cubic` 98 %.
+  - **(iv) E wavelength error is the main weakness:** a rigid ±0.1 nm shift
+    leaves srf a 62 % reduction (error 5.7e-5); ±0.3 nm only 12 %; a ±0.1 nm
+    stretch, 69 %.  So the E wavelength scale (relative to the model)
+    must be known to ≪ 0.1 nm, i.e. Phase 2 must fit a shift (and
+    stretch) along with the SRF.
+  - **(v) SRF told ±0.3 nm wrong:** 6-55 % reduction (E −0.3 worst).
+  - **(vi) wrong Emod: robust**, ≥ 99 % (SZA + 10°, PWV × 2, low aerosol).
+    The model's line *shapes* matter, not its broad level, as plan §3
+    predicted.
+  - **(vii) noise:** 45 % (h = 1) and 59 % (h = 5).  The srf line error
+    (1.1e-4) sits at the away-from-lines noise level (9.7e-5;
+    line/away 1.14).
+- **Results, 122305 (E ≈ L):**
+  - The linear line error in (iii) is 1.23e-5, **already below the true
+    structure** (2.6e-5).
+  - srf still removes 99.5 % in (ii)/(iii), but it is fragile: a 0.3 nm SRF
+    error makes it **5-7× worse than linear** (v), and a ±0.1 nm wavelength
+    error leaves it no better than linear (iv).
+  - `ruddick2023` is 2.3× *worse* than linear in (iii): linear
+    interpolation's own smoothing partly mimics a wider L SRF, and removing
+    it exposes the remaining mismatch.
+- **What this means for G1** (task 12 decides):
+  - The 80 % target in (ii)-(iii) is met by srf (~100 %) and not by
+    ruddick2023 (0 %), so H2 is a requirement on narrow-E instruments.
+  - Graceful degradation holds for (vi), but (iv) and (v) show that the
+    SRF width (to ≪ 0.3 nm) and the E wavelength scale (to ≪ 0.1 nm) must
+    be known.  Phase 0 found per-instrument SRF stability of 0.01-0.06 nm,
+    so the table route is viable; wavelength errors call for fitting a
+    shift and stretch.
+  - On E ≈ L instruments the correction gains little and risks much, so
+    Phase 2 might apply srf only where |FWHM_L − FWHM_E| is above a
+    threshold.
+- The controls (fluorescence, Raman, the real band peaks) are in the
+  truth; task 10 quantifies how much each method changes them.
+- `pytest -q`: 92 passed.
+
+### 2026-10-04 -- Analysis #10: controls and sensitivity (Opus 5.5)
+
+- Extended `hypernet/wiggles/phase1_twin.py` with `--task 10`
+  (`run_scene_t10`, `sweep_cases`, `summarise_controls`,
+  `summarise_degradation`, `figures_t10`).  All 25 scenes × 2 instruments in
+  **22 s** on 12 workers (17,000 control rows, 14,700 sweep rows).
+  - **Controls.**  Each scene is composed three times: all controls, no
+    fluorescence, no Raman.  Ed (so every method's Ed_L) is identical across
+    the three, so a method's view of a control is ρ_m(all) − ρ_m(without),
+    and the truth's likewise.  Fluorescence is judged over 665-705 nm
+    (`FL_WINDOW`, it peaks in O₂-B); Raman within ±5 nm of the ten lines.
+    Every case (i)-(vii) and all five methods.  In case vii the three
+    variants share one noise draw.
+  - **Noise floor:** rms[(ρ_m(vii) − ρ_m(iii))''] in the same region, per
+    method; it is method-independent to a few %.
+  - **Degradation sweeps** (`SWEEP`, case iii with one perturbation; linear,
+    ruddick2023, srf): rigid E shift ±0.3 nm (11 points), stretch ±0.2 nm
+    (7), correction FWHM_E and FWHM_L error ±0.3 nm (9 each), Emod SZA
+    offset ±10° (7), Emod PWV factor 0.5-3 (6).  `main_t10` pre-builds the
+    extra Emods (~3 s each, cached under `ref/emod/`) so the workers only
+    read them.
+  - Outputs: `$OS_COLOR/hypernet/wiggles/phase1/twin_controls.parquet`,
+    `twin_degradation.parquet`; committed `hypernet/wiggles/phase1_controls.csv`
+    (medians over scenes: `ctl_amp`, `ctl_err`, `ctl_level_err`, `tot_err`,
+    `noise_floor`, `ctl_err_over_noise`, `ctl_err_over_amp`,
+    `ctl_amp_over_noise`) and `phase1_degradation.csv` (`rms_line`,
+    `reduction` vs linear at the same perturbation, `reduction_vs_iii_linear`);
+    figures `figs/phase1/twin_controls.png`, `twin_degradation.png`.
+- **Controls (the G1 criterion).**
+  - **No method changes a control by more than 0.20 of the case (vii)
+    noise floor**, in any case (i)-(vii), on either instrument, at h = 1 or
+    5 nm (worst: fluorescence, 122304, h = 5, ±0.3 nm shift).  In case (iii)
+    srf changes neither control at all (ratio 1e-13); linear, cubic, sinc and
+    ruddick2023 change them by 0.02-0.06 of the floor.
+  - **The criterion is weak as worded.**  The controls' own ρw'' is itself
+    below the single-sequence noise: fluorescence 0.17 and Raman 0.05 of the
+    floor at h = 1 nm, 1.3 and 0.4 at h = 5 nm.  A sharper measure is
+    the error relative to the control (`ctl_err_over_amp`).  In case (iii),
+    122304, h = 1 nm: linear distorts the fluorescence ρw'' by 23 % and the
+    Raman ρw'' by 44 %, ruddick2023 by 31 % and 46 %, srf by 0.  The
+    distortion is Ed_L's line error multiplying the control (the controls
+    *peak* in O₂-B/O₂-A, where that error is largest; `twin_controls.png`
+    top row).  ρ-level errors are < 1 % of the control for every method.
+    srf's worst case over (iv)-(vi) is 48 % (fluorescence, ±0.3 nm shift),
+    no worse than linear's 51 %.  So the corrections never *remove* a real
+    feature; srf restores it, and the other methods distort it.
+  - Suggest G1 reads the control criterion as "control error ≤ linear's, and
+    ≪ the control itself in case (iii)", or judges it on a multi-sequence
+    floor (√N lower) for Phase 3 composites.
+- **Degradation curves (122304, h = 1 nm; reduction vs linear):**
+  - E wavelength, rigid shift: ±0.02 nm → 92 %, ±0.05 → 80 %, ±0.1 → 62 %,
+    ±0.2 → 32 %, ±0.3 → 12 %.  Stretch (at the ends): ±0.05 → 84 %, ±0.1 →
+    69 %, ±0.2 → 44 %.  **The 80 % target needs the E-relative-to-model
+    wavelength scale to ≤ 0.05 nm.**
+  - Correction FWHM error: FWHM_E ±0.05 → 86-87 %, ±0.1 → 72-74 %, ±0.2 →
+    40-50 %, ±0.3 → 6-29 %; FWHM_L is less sensitive (±0.1 → 81-83 %, ±0.3 →
+    38-55 %).  The response is linear in |ΔFWHM| near 0, so **80 % needs
+    FWHM_E to ≲ 0.07 nm and FWHM_L to ≲ 0.1 nm**: within Phase 0's 0.01-0.06 nm
+    SRF stability, but only with per-instrument SRFs.
+  - Emod: SZA ±10° and PWV × 0.5-3 all keep ≥ 98 % (errors ≤ 3e-6, against
+    1.45e-4).  The Emod's atmosphere is not a concern.
+  - ruddick2023 sits on linear (0 % or slightly worse) along every curve.
+- **122305 (E ≈ L):** srf beats linear only for |shift| ≲ 0.05 nm
+  and |ΔFWHM| ≲ 0.05 nm.  Beyond that it is no better than linear (shift)
+  or several times worse (FWHM: −6.6× at −0.3 nm).  ruddick2023 is 2.3×
+  worse than linear at the nominal point, as in task 9.  This supports
+  applying srf only above a ΔFWHM threshold (task 11 will give the number).
+- `pytest -q`: 92 passed (no new tests; the task 10 code is a script).
+
+### 2026-10-04 -- Analysis #11: prediction for Phase 3 (Opus 5.5)
+
+- New `hypernet/wiggles/phase1_prediction.py` (reuses `phase1_twin`'s masks,
+  second differences and constants).  Case (iii) on the real 122304 E/L
+  grids with the 122304 Ld SRF model as L and a synthetic E SRF,
+  FWHM_E(λ) = FWHM_L(λ) − ΔFWHM, ΔFWHM ∈ {0, 0.05, 0.1, 0.2, …, 1.0} nm; 25
+  scenes; linear, ruddick2023, srf; h = 1 and 5 nm.  54,450 rows in 11 s.
+  - Three scenarios: `ideal` (noise-free, correction told the truth),
+    `noise` (case vii noise), `realistic` (noise + a 0.05 nm E shift + the
+    correction told FWHM_E + 0.05 nm, i.e. the edges of Phase 0's
+    wavelength-scale and SRF-stability findings).
+  - Two metrics:
+    - the twin metric (`reduction`: of rms(ρw'' − ρw''_true) near the
+      lines, vs linear);
+    - **an observable one for G3**, because Phase 3 has no truth:
+      excess = √(rms²_line(ρw'') − rms²_away(ρw'')), with `reduction_obs`
+      vs linear.  The truth has an excess of its own (real line filling,
+      gas-band peaks), so `reduction_obs_max` = 1 − excess_true /
+      excess_linear is the most a perfect correction can show.  The
+      away-from-lines rms carries the noise, so the quadrature removes it
+      to first order.
+  - Line depth = 1 − min(Ed_L, ±1 nm)/max(Ed_L, ±5 nm) of the true Ed
+    through the L SRF; per line and in depth bins (rows `line =
+    'depth[a,b)'`).
+  - Outputs: `$OS_COLOR/hypernet/wiggles/phase1/twin_prediction.parquet`;
+    committed `hypernet/wiggles/phase1_prediction.csv` (3,168 rows: medians
+    over scenes per scenario × ΔFWHM × h × method × line or depth bin);
+    `figs/phase1/twin_prediction.png`.
+- **Results, ten lines together, h = 1 nm** (srf; ruddick2023 is −4 to −8 %
+  for every ΔFWHM > 0 and every scenario, i.e. never helps):
+
+  | ΔFWHM (nm) | 0 | 0.1 | 0.2 | 0.3 | 0.5 | 0.7 | 1.0 |
+  |---|---|---|---|---|---|---|---|
+  | twin, ideal | 99 | 100 | 100 | 100 | 100 | 100 | 100 |
+  | twin, noise | 0 | 2 | 14 | 27 | 51 | 66 | 80 |
+  | **observable, noise** | −1 | 11 | 31 | 52 | **74** | 84 | 90 |
+  | observable, realistic | −4 | 3 | 21 | 39 | **62** | 73 | 80 |
+  | observable max (perfect), noise | 69 | 71 | 80 | 87 | 92 | 94 | 96 |
+
+  - Linear's error grows ~linearly with ΔFWHM above 0.1 nm (rms 2.2e-5 at
+    0.1, 1.6e-4 at 0.5, 4.2e-4 at 1.0); the true excess is 2.0e-5.  At
+    ΔFWHM ≲ 0.1 nm the wiggle excess is below the true line structure and
+    there is little to remove.
+  - **For a narrow-E instrument (ΔFWHM ≈ 0.5 nm) the G3 prediction for a
+    single sequence is a 60-75 % reduction of the observable excess**
+    (realistic-ideal knowledge), with ~90 % the ceiling.  For E ≈ L
+    instruments (ΔFWHM < 0.1 nm) it is ≈ 0-10 %: G3 should not expect a
+    reduction there.
+  - **h = 5 nm is a poor G3 metric:** the true excess dominates (Ca H/K
+    wings, broad gas bands), so even a perfect correction shows only 28 %
+    at ΔFWHM 0.5 (srf reaches that ceiling).
+- **Per line (noise scenario, ΔFWHM 0.5):** Ca K/H 76-78 %, G band 65 %,
+  H β 43 %, Mg b/Na D 33 %, O₂-B 36 %, O₂-A 24 %, H α 13 %, H₂O 1 %.  With
+  noise the reduction follows the line's SNR (depth × signal / noise), not
+  depth alone.  The deep O₂-A (0.69) and H₂O (0.43) bands sit where Lu
+  noise is largest (dark water in the NIR), so the depth bins are
+  confounded with wavelength; the figure's panel (c) is therefore per line.
+  Noise-free, every line and depth bin is ≥ 93 % for ΔFWHM ≥ 0.2.
+- **Implications for G3 (task 12):**
+  - Judge on the observable excess at h = 1 nm, against the noise row for
+    the instrument's measured ΔFWHM, per sequence, with
+    `reduction_obs_max` as the ceiling.
+  - Expect the clearest signal at Ca H/K and the G band; O₂-A, H α and H₂O
+    are noise-limited for one sequence.
+  - Averaging N sequences (noise /√N) moves the result toward the ideal
+    row.
+- `pytest -q`: 92 passed.
+
+### 2026-10-04 -- Gate #12: G1 (Opus 5.5)
+
+- Wrote `claude_prompts/wiggles/gate_G1.md` (the proposed location; Q&A
+  "Gate #12" Q1 asks JXP to confirm).  Verdict: **pass for narrow-E
+  instruments** with two knowledge requirements (E wavelength ≤ 0.05 nm,
+  SRF widths ≲ 0.07-0.1 nm); **H2 is required** (`ruddick2023` 0 % in (ii),
+  −6 % in (iii)); Phase 2 default `srf` above ΔFWHM 0.15 nm, `linear`
+  below.
+  - Criterion 1: pass (~100 %).
+  - Criterion 2: pass on narrow-E, conditional on the tolerances; fail on
+    E ≈ L.
+  - Criterion 3: pass, but weak as worded (rewording proposed).
+  - Criterion 4: `ruddick2023` alone does not pass.
+- Seven open concerns: the E wavelength scale (binding), E SRFs from L1A,
+  SRF shape, physics outside the twin (Ring, the Lu NIR excess), E ≈ L
+  instruments and their unexplained floor, the control criterion, and
+  single-sequence noise.
+- New finding pulled from the task 9 table: on 122305 the twin's rms
+  relative ρw error near the lines is 0.08 % (offset only) and 0.46 %
+  (offset + residual mismatch).  Phase 0 measured a 0.5-2 % floor, so H1
+  does not explain it.
+- Proposed §4 edits to `docs/wiggles_planning.md` in the Q&A (Gate #12 Q2):
+  the G1 control wording, the G1 outcome, two Phase 2 bullets (the default
+  method and threshold, and the E shift/stretch fit), and the G3 yardstick.
+  **Not applied** pending JXP's approval.
+- No code changes; `pytest -q` not rerun (92 passed at task 11).

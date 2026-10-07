@@ -279,6 +279,127 @@ preliminary findings are in Context.
 
 ## Q&A
 
+### Setup #1 -- 2026-10-07 (Opus 5.5)
+
+**What I read:** plan §3, §4 (Phase 2, and the G1 outcome now in Phase 1),
+§7 and §9; `gate_G1.md`; this doc; `hypernet/edinterp.py`, `srf.py`
+(`SRFModel`), `emod.py` and `twin.py`; and the VEIT L1C file's irradiance and
+uncertainty variables.  Nothing was fetched or run except two read-only
+checks: the L1C variable list, and the time of one `srf` call.
+
+**Findings that bear on the questions**
+
+- **The L1C has three uncertainty components, not two.**
+  `u_rel_random_irradiance` (err_corr random × random),
+  `u_rel_systematic_indep_irradiance` and
+  `u_rel_systematic_corr_rad_irr_irradiance` (both `err_corr_matrix` along
+  wavelength, systematic along scan; the matrices are named in
+  `err_corr_1_params`).  Units are **%**, dims (wavelength, scan); the
+  radiances follow the same pattern.  The plan's `u_rel_random` /
+  `u_rel_systematic` signature does not match this.  Phase 0 also found
+  every L1C `u_rel_random` value to be 0, a placeholder.
+- **`edinterp.py` imports `convolve_to_grid` from `twin.py`**, so the
+  deliverable depends on the twin-experiment module.
+- **Speed is not an issue.**  One 1536 → 1538 `srf` call with an SRFModel
+  takes 0.02 s today.  A cached convolution matrix (task 3) is for punpy's
+  Monte Carlo (hundreds of draws), not for a single call.
+- **`SRFModel` already carries what punpy needs**: `coeffs` with `cov`
+  (FWHM quadratic), and `offset` with `offset_err`.
+- **G1 tested only E wavelength errors.**  `srf` also evaluates Emod at the
+  L pixels, so an L wavelength error misplaces the model's lines relative to
+  the measured L.  The twin has not measured this.
+
+**Questions for JXP** (each has a default; say "defaults" to accept them all)
+
+1. **Module layout.**  *Default: flat modules.*
+   - *Harden `interpolate_ed_to_l` in `hypernet/edinterp.py`; add
+     `choose_method` there.*
+   - *Move `convolve_to_grid` (and the cached convolution matrix) into
+     `hypernet/srf.py`, so `edinterp` no longer imports `twin`.  `twin`
+     re-exports it, so the Phase 1 scripts are unchanged.*
+   - *New `hypernet/srfcal.py`: `calibrate_srf` (task 4) and
+     `fit_wavelength_scale` (task 4b).*
+   - *New `hypernet/srftable.py`: `load_srf_table`, `srf_for` (task 6).*
+   - *`emod_for` in `hypernet/emod.py` (task 5).*
+   - *The punpy propagation in `edinterp.py`, behind the `u_rel_*`
+     arguments (task 7).*
+
+   *The plan's `hypernet/wavecal/` name is dropped.*
+
+   >A. Use the default
+2. **The nulls.**  *Default: public `METHODS = ("linear", "ruddick2023",
+   "srf")`; `cubic` and `sinc` move to a private `NULL_METHODS` in the same
+   module, still accepted by `interpolate_ed_to_l` so that
+   `phase1_twin.py` reproduces its tables.*
+   >A. Use the default
+3. **The snippet.**  *Default: `hypernet/snippets/interpolate_wav_srf.py`,
+   a class named after the processor's linear one (e.g.
+   `InterpolateWavSRF`; the exact name follows task 2).*
+   - *`hypernets_processor` is not installed, so the test uses a minimal
+     stand-in for its base class.*
+   - *`hypernet/snippets/` is not imported by `hypernet/__init__`.*
+   >A. Use the default
+4. **The processor version.**  *Default: target Kevin's pinned commit
+   `9a12819a…`.  Diff it against the current default branch in task 2 for
+   information only, and record any interface change in the Logs.*
+   >A. Use the default
+5. **Uncertainty components.**  *Default: match the L1C, not the plan's two
+   names.*
+   - *`interpolate_ed_to_l` takes and returns the three components,
+     `u_rel_random`, `u_rel_systematic_indep` and
+     `u_rel_systematic_corr_rad_irr`, in % on (wavelength[, scan]), with
+     their err_corr matrices.*
+   - *The input components are interpolated (linear weights) and
+     propagated.*
+   - *The new terms (SRF parameters, Emod inputs, the wavelength fit) are
+     common to every scan of an instrument, so they are added to
+     `u_rel_systematic_indep`, with a punpy-derived wavelength error-
+     correlation matrix.*
+   - *Plan §4/§7's signature gets updated at the Phase 2 exit (task 10).*
+   >A. Use the default
+6. **While G0 is open.**  *Default:*
+   - *the snippet ships with the SRF table as its source (G0(b) passes
+     preliminarily), and `calibrate_srf` per sequence is an option;*
+   - *the table's Release 2 rows are flagged `provisional`;*
+   - *no L − E centroid recalibration (G0(c) relative passes); E's absolute
+     scale is handled by task 4b;*
+   - *revisit all three when `gate_G0.md` exists.*
+   >A. Use the default
+7. **The method rule.**  *Default:*
+   - *ΔFWHM = the median of FWHM_Ld(λ) − FWHM_E(λ) over 400-680 nm, where
+     both template models are constrained (the VEIT model is unconstrained
+     at 680-850 nm).*
+   - *It is computed per instrument × calibration period and stored in the
+     task 6 table, with the selected method.*
+   - *`choose_method(srf_irr, srf_rad, threshold=0.15)` does the same for
+     any pair of models; the snippet reads the table and allows an
+     override.*
+   >A. Use the default
+8. **The wavelength-scale fit (task 4b).**  *Default:*
+   - *Fit per sequence, on the scan-mean E, against the HSRS-based Emod
+     through the E SRF, for the sequence's SZA.*
+   - *Fall back to the calibration-period median when the fit is flagged
+     (low blue signal) or its uncertainty exceeds 0.03 nm.*
+   - *Fit L (Ld) the same way.*
+   - *Add an **L** wavelength-error case to the task 9b twin check, since
+     G1 never measured it.*
+   >A. Use the default
+9. **The Emod cache grid (task 5).**  *Default:*
+   - *SZA bins of 5° (each entry builds in ~3.5 s);*
+   - *water vapour snapped to {7.5, 15, 30} mm;*
+   - *ozone 300 DU and pressure 1013 hPa fixed.*
+
+   *G1 found the correction insensitive to SZA ± 10° and water vapour
+   × 0.5-3, so this grid is generous.*
+   >A. Use the default
+10. **Edges.**  *Default: L pixels whose SRF reaches beyond the Emod range
+    (380-1000 nm), or beyond the E grid, get `linear` and a flag; NaN
+    inputs propagate as NaN at the affected pixels only.*
+   >A. Use the default
+11. **The exit report.**  *Default:
+    `claude_prompts/wiggles/phase2_exit.md`, as proposed in task 10.*
+   >A. Use the default
+
 ## Logs
 
 ### 2026-10-05 -- Doc refreshed after G1 (Opus 5.5)
@@ -302,4 +423,22 @@ preliminary findings are in Context.
   - **New task 9b:** the non-Gaussian SRF twin check.
   - Task 10: states the new items.
 - Nothing else changed; no code.
+
+### 2026-10-07 -- Setup #1 (Opus 5.5)
+
+- Read the plan (§3, §4 Phase 2 and the G1 outcome, §7, §9), `gate_G1.md`,
+  this doc and the Phase 0/1 modules.  Wrote 11 questions in Q&A "Setup #1",
+  each with a default.  No code written.
+- **Learned:**
+  - The L1C carries three relative-uncertainty components in %
+    (`u_rel_random_`, `u_rel_systematic_indep_`,
+    `u_rel_systematic_corr_rad_irr_` + variable), with err_corr matrices
+    named in `err_corr_1_params`.  The plan's two-name signature needs
+    updating (Q5).
+  - `edinterp` depends on `twin` through `convolve_to_grid` (Q1).
+  - One `srf` call takes 0.02 s.
+  - `SRFModel` already holds `cov` and `offset_err` for punpy.
+  - G1 never tested an **L** wavelength error, which `srf` is exposed to
+    through Emod_L (Q8).
+- Read-only checks only: the VEIT L1C variable list and one timed call.
 

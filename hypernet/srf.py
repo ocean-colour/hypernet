@@ -844,3 +844,121 @@ def fit_template_windows(wav, spec, ref_wave, ref_flux, windows=None, err=None,
     df['use_for_srf'] = True
     df['ok'] = df['ok'].astype(bool)
     return df
+
+
+# --- pixel convolution (moved from hypernet.twin in Phase 2 task 3) -----------------
+
+#: Cached convolution matrices: key -> scipy.sparse.csr_matrix (LRU).
+_MATRIX_CACHE = {}
+MATRIX_CACHE_SIZE = 64
+
+
+def fwhm_values(fwhm, grid):
+    """FWHM (nm) at ``grid`` from a constant, a per-pixel array, a callable or
+    an :class:`SRFModel`."""
+    grid = np.asarray(grid, dtype=float)
+    if hasattr(fwhm, 'fwhm'):
+        fwhm = fwhm.fwhm
+    f = fwhm(grid) if callable(fwhm) else np.broadcast_to(np.asarray(fwhm, float), grid.shape)
+    return np.asarray(f, dtype=float)
+
+
+def srf_key(fwhm):
+    """A hashable key for an SRF spec, or None if it cannot be cached (a
+    plain callable: two lambdas may differ while sharing nothing hashable)."""
+    if isinstance(fwhm, SRFModel):
+        return ('model', np.asarray(fwhm.coeffs, float).tobytes(), float(fwhm.lam_ref),
+                float(fwhm.lam_scale))
+    if callable(fwhm):
+        return None
+    a = np.asarray(fwhm, dtype=float)
+    return ('const', float(a)) if a.ndim == 0 else ('array', a.tobytes())
+
+
+def convolution_matrix(lam_hr, grid, fwhm, nsig=5.0, cache=True):
+    """The Gaussian-SRF convolution as a sparse matrix M, so that
+    ``M @ spec_hr`` is :func:`convolve_to_grid`.
+
+    Row k holds exp(-(lam_hr - grid_k)^2 / 2 sigma_k^2) dlam, truncated at
+    +-``nsig`` sigma and normalised to sum to 1 (so a constant maps to itself).
+
+    Parameters
+    ----------
+    lam_hr : array
+        High-resolution wavelengths, ascending (uniform or not), nm.
+    grid : array
+        Pixel centres, nm.
+    fwhm : float, array, callable or SRFModel
+        SRF FWHM (nm): constant, one per pixel, ``f(lambda)``, or an SRFModel.
+    nsig : float
+        Kernel half-width in sigma.
+    cache : bool
+        Reuse a matrix built for the same (lam_hr, grid, fwhm, nsig).  Plain
+        callables are never cached (see :func:`srf_key`).
+
+    Returns
+    -------
+    scipy.sparse.csr_matrix
+        Shape (grid.size, lam_hr.size).  A row with no samples in range is
+        empty, and the convolution there is NaN.
+    """
+    from scipy import sparse
+
+    lam_hr = np.asarray(lam_hr, dtype=float)
+    grid = np.asarray(grid, dtype=float)
+    k = srf_key(fwhm) if cache else None
+    if k is not None:
+        key = (lam_hr.size, lam_hr[0], lam_hr[-1], hash(lam_hr.tobytes()),
+               hash(grid.tobytes()), k, float(nsig))
+        if key in _MATRIX_CACHE:
+            _MATRIX_CACHE[key] = _MATRIX_CACHE.pop(key)          # most recent last
+            return _MATRIX_CACHE[key]
+    sig = fwhm_values(fwhm, grid) / FWHM_PER_SIGMA
+    dw = np.gradient(lam_hr)
+    lo = np.searchsorted(lam_hr, grid - nsig * sig)
+    hi = np.searchsorted(lam_hr, grid + nsig * sig)
+    n = hi - lo
+    indptr = np.concatenate([[0], np.cumsum(n)])
+    cols = np.empty(indptr[-1], dtype=np.int64)
+    vals = np.empty(indptr[-1])
+    for r in range(grid.size):
+        sl = slice(lo[r], hi[r])
+        w = np.exp(-0.5 * ((lam_hr[sl] - grid[r]) / sig[r]) ** 2) * dw[sl]
+        cols[indptr[r]:indptr[r + 1]] = np.arange(lo[r], hi[r])
+        vals[indptr[r]:indptr[r + 1]] = w / w.sum() if w.size else w
+    M = sparse.csr_matrix((vals, cols, indptr), shape=(grid.size, lam_hr.size))
+    if k is not None:
+        _MATRIX_CACHE[key] = M
+        while len(_MATRIX_CACHE) > MATRIX_CACHE_SIZE:
+            _MATRIX_CACHE.pop(next(iter(_MATRIX_CACHE)))
+    return M
+
+
+def convolve_to_grid(lam_hr, spec_hr, grid, fwhm, nsig=5.0, cache=True):
+    """Observe ``spec_hr`` (on ``lam_hr``, nm) with a Gaussian SRF on ``grid``.
+
+    Parameters
+    ----------
+    lam_hr, spec_hr : array
+        High-resolution spectrum (ascending ``lam_hr``; uniform or not).
+    grid : array
+        Pixel centres, nm.
+    fwhm : float, array, callable or SRFModel
+        SRF FWHM (nm): a constant, one value per pixel, a function of
+        wavelength (e.g. ``SRFModel.fwhm``), or an SRFModel.
+    nsig : float
+        Kernel half-width in sigma.
+    cache : bool
+        Passed to :func:`convolution_matrix`.
+
+    Returns
+    -------
+    numpy.ndarray
+        The SRF-weighted mean of ``spec_hr`` at each pixel (weights include
+        the sample spacing, so a constant maps to the same constant); NaN
+        where no high-resolution sample is within the kernel.
+    """
+    M = convolution_matrix(lam_hr, grid, fwhm, nsig=nsig, cache=cache)
+    out = M @ np.asarray(spec_hr, dtype=float)
+    out[np.diff(M.indptr) == 0] = np.nan
+    return out

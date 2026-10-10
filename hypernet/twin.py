@@ -54,41 +54,9 @@ RAMAN_SHIFT, RAMAN_FWHM = 3357.0, 200.0
 
 # --- observation -----------------------------------------------------------------
 
-def convolve_to_grid(lam_hr, spec_hr, grid, fwhm, nsig=5.0):
-    """Observe ``spec_hr`` (on ``lam_hr``, nm) with a Gaussian SRF on ``grid``.
-
-    Parameters
-    ----------
-    lam_hr, spec_hr : array
-        High-resolution spectrum (ascending ``lam_hr``; uniform or not).
-    grid : array
-        Pixel centres, nm.
-    fwhm : float, array or callable
-        SRF FWHM (nm): a constant, one value per pixel, or a function of
-        wavelength (e.g. ``SRFModel.fwhm``).
-    nsig : float
-        Kernel half-width in sigma.
-
-    Returns
-    -------
-    numpy.ndarray
-        The SRF-weighted mean of ``spec_hr`` at each pixel (weights include
-        the sample spacing, so a constant maps to the same constant).
-    """
-    lam_hr = np.asarray(lam_hr, dtype=float)
-    spec_hr = np.asarray(spec_hr, dtype=float)
-    grid = np.asarray(grid, dtype=float)
-    f = fwhm(grid) if callable(fwhm) else np.broadcast_to(np.asarray(fwhm, float), grid.shape)
-    sig = np.asarray(f, dtype=float) / srfmod.FWHM_PER_SIGMA
-    dw = np.gradient(lam_hr)
-    out = np.empty(grid.size)
-    lo = np.searchsorted(lam_hr, grid - nsig * sig)
-    hi = np.searchsorted(lam_hr, grid + nsig * sig)
-    for k in range(grid.size):
-        sl = slice(lo[k], hi[k])
-        w = np.exp(-0.5 * ((lam_hr[sl] - grid[k]) / sig[k]) ** 2) * dw[sl]
-        out[k] = np.dot(w, spec_hr[sl]) / w.sum() if w.size else np.nan
-    return out
+# convolve_to_grid moved to hypernet.srf in Phase 2 task 3 (the deliverable
+# edinterp must not depend on this module); re-exported here.
+convolve_to_grid = srfmod.convolve_to_grid
 
 
 # --- fields and the rho_w library ---------------------------------------------------

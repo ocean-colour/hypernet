@@ -137,6 +137,9 @@ def test_delta_line_observed_fwhm3():
     y = 1 - 0.6 * np.exp(-0.5 * ((lam - 600.0) / 0.003) ** 2)      # ~delta line
     grid = np.arange(570.0, 630.0, 0.48) + 0.13
     obs = twin.observe(lam, y, grid, 3.0)
+    # a little seeded noise: on exactly noise-free data curve_fit's covariance
+    # is undefined, and passing would depend on 1e-15 rounding
+    obs = obs * (1 + 1e-5 * np.random.default_rng(1).standard_normal(obs.size))
     r = srf.fit_line(grid, obs, 600.0)
     assert r['ok']
     assert r['fwhm'] == pytest.approx(3.0, abs=0.01)

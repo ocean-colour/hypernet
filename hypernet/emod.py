@@ -321,3 +321,106 @@ def build_emod(sza, pwv_mm=15.0, ozone_du=300.0, pressure_hpa=1013.25, temperatu
         np.savez(path, **out)
     out['cached'] = False
     return out
+
+
+# --- the Emod cache (Phase 2 task 5) --------------------------------------------------
+
+#: The cache grid (Setup Q9): SZA in 5 deg bins, water vapour snapped to these
+#: columns (mm), ozone and pressure fixed.  Gate G1 found the srf correction
+#: insensitive to SZA +- 10 deg and water vapour x 0.5-3, so this is generous.
+SZA_STEP = 5.0
+SZA_RANGE = (0.0, 85.0)
+PWV_GRID = (7.5, 15.0, 30.0)
+OZONE_FIXED = 300.0
+PRESSURE_FIXED = 1013.25
+#: Diffuse fraction of Ed used to weight T_direct and T_diffuse in the model
+#: spectrum (clear sky).  Only the line shapes matter to the interpolation
+#: (the measured/model ratio absorbs the broad level), and they depend on it
+#: weakly.
+DIFFUSE_FRACTION = 0.15
+
+_EMOD_MEM = {}
+_CONV_MEM = {}
+CONV_CACHE_SIZE = 64
+
+
+def snap(sza, pwv_mm=15.0):
+    """The cache-grid point for (sza, pwv): SZA to the nearest 5 deg (clipped to
+    0-85), water vapour to the nearest of :data:`PWV_GRID` in log."""
+    s = float(np.clip(SZA_STEP * np.round(float(sza) / SZA_STEP), *SZA_RANGE))
+    g = np.asarray(PWV_GRID)
+    w = float(g[np.argmin(np.abs(np.log(g) - np.log(max(float(pwv_mm), 1e-3))))])
+    return s, w
+
+
+def emod_for(sza, pwv_mm=15.0, ozone_du=None, pressure_hpa=None,
+             diffuse_fraction=DIFFUSE_FRACTION, cache_dir=None, builder=None):
+    """The model irradiance for a sequence, from the nearest cache-grid entry.
+
+    Parameters
+    ----------
+    sza : float
+        Solar zenith angle, deg (snapped to 5 deg bins).
+    pwv_mm : float
+        Water vapour column, mm (snapped to :data:`PWV_GRID`).
+    ozone_du, pressure_hpa : float, optional
+        Accepted for the interface; the grid fixes them at 300 DU and
+        1013.25 hPa (Setup Q9), and the values used are returned.
+    diffuse_fraction : float
+        Weight of ``T_diffuse`` in the model spectrum.
+    cache_dir : str, optional
+        Where :func:`build_emod` stores its npz (default :func:`emod_dir`).
+    builder : callable, optional
+        Replaces :func:`build_emod` (tests).
+
+    Returns
+    -------
+    dict
+        ``lam``, ``E`` = F0 [(1 - f_d) T_direct + f_d T_diffuse] (W m-2 nm-1,
+        a model *shape*: no cos(SZA) or aerosol), the ``build_emod`` arrays,
+        and ``sza_bin``, ``pwv_bin``, ``ozone_du``, ``pressure_hpa``,
+        ``diffuse_fraction``, ``key``.  The same object is returned for every
+        call in the same bin (in-memory cache); a miss builds it (or reads
+        ``build_emod``'s disk cache under ``ref/emod/``).  Usable directly as
+        ``emod=`` in :func:`hypernet.edinterp.interpolate_ed_to_l`.
+    """
+    s, w = snap(sza, pwv_mm)
+    key = ('emod', s, w, OZONE_FIXED, PRESSURE_FIXED, float(diffuse_fraction),
+           cache_dir or '')
+    if key in _EMOD_MEM:
+        return _EMOD_MEM[key]
+    build = builder or build_emod
+    e = dict(build(s, pwv_mm=w, ozone_du=OZONE_FIXED, pressure_hpa=PRESSURE_FIXED,
+                   cache_dir=cache_dir))
+    fd = float(diffuse_fraction)
+    e['E'] = e['F0'] * ((1.0 - fd) * e['T_direct'] + fd * e['T_diffuse'])
+    e.update(sza_bin=s, pwv_bin=w, ozone_du=OZONE_FIXED, pressure_hpa=PRESSURE_FIXED,
+             diffuse_fraction=fd, key=key)
+    _EMOD_MEM[key] = e
+    return e
+
+
+def emod_on_grid(entry, grid, srf):
+    """``entry['E']`` through ``srf`` at ``grid`` (Emod_X of plan §3), cached per
+    (Emod entry, grid, SRF).  ``srf``: an SRFModel, constant or per-pixel
+    array (anything :func:`hypernet.srf.srf_key` can key; a plain callable is
+    computed but not cached)."""
+    from hypernet import srf as srfmod
+    grid = np.asarray(grid, dtype=float)
+    k = srfmod.srf_key(srf)
+    key = None if k is None else (entry.get('key'), hash(grid.tobytes()), k)
+    if key is not None and key in _CONV_MEM:
+        return _CONV_MEM[key]
+    out = srfmod.convolve_to_grid(entry['lam'], entry['E'], grid, srf)
+    out.setflags(write=False)
+    if key is not None:
+        _CONV_MEM[key] = out
+        while len(_CONV_MEM) > CONV_CACHE_SIZE:
+            _CONV_MEM.pop(next(iter(_CONV_MEM)))
+    return out
+
+
+def clear_memory_cache():
+    """Drop the in-memory Emod entries and convolutions (the disk cache stays)."""
+    _EMOD_MEM.clear()
+    _CONV_MEM.clear()

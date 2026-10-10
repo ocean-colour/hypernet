@@ -97,3 +97,75 @@ def test_build_emod_and_cache(tmp_path):
     assert e2['cached']
     for k in ('lam', 'F0', 'T_direct', 'T_diffuse'):
         np.testing.assert_array_equal(e2[k], e[k])
+
+
+# --- Phase 2 task 5: the Emod cache --------------------------------------------------
+
+def _fake_builder(calls):
+    """A stand-in for build_emod that records its calls (tier 1)."""
+    def build(sza, pwv_mm=15.0, ozone_du=300.0, pressure_hpa=1013.25, cache_dir=None):
+        calls.append((sza, pwv_mm, ozone_du, pressure_hpa))
+        lam = np.arange(380.0, 1000.0 + 1e-9, 0.01)
+        line = 1 - 0.5 * np.exp(-0.5 * ((lam - 656.28) / 0.05) ** 2)
+        return dict(lam=lam, F0=1.5 * line, T_direct=np.full(lam.size, 0.9 - 0.001 * sza),
+                    T_diffuse=np.full(lam.size, 0.8), sza=sza, pwv_mm=pwv_mm, cached=False)
+    return build
+
+
+def test_snap_grid():
+    assert emod.snap(36.7) == (35.0, 15.0)
+    assert emod.snap(37.6, 22.0) == (40.0, 30.0)        # log-nearest: 22 is closer to 30
+    assert emod.snap(37.6, 20.0) == (40.0, 15.0)
+    assert emod.snap(-3.0, 1.0) == (0.0, 7.5)
+    assert emod.snap(89.0, 90.0) == (85.0, 30.0)
+
+
+def test_emod_for_same_bin_same_object():
+    emod.clear_memory_cache()
+    calls = []
+    b = _fake_builder(calls)
+    e1 = emod.emod_for(36.7, 14.0, builder=b, cache_dir='fake')
+    e2 = emod.emod_for(35.9, 16.0, ozone_du=280.0, pressure_hpa=1000.0, builder=b,
+                       cache_dir='fake')
+    assert e1 is e2 and e1['E'] is e2['E'] and len(calls) == 1
+    assert calls[0] == (35.0, 15.0, emod.OZONE_FIXED, emod.PRESSURE_FIXED)
+    assert (e1['sza_bin'], e1['pwv_bin'], e1['ozone_du']) == (35.0, 15.0, 300.0)
+    fd = emod.DIFFUSE_FRACTION
+    np.testing.assert_allclose(e1['E'], e1['F0'] * ((1 - fd) * e1['T_direct'] + fd * 0.8))
+    e3 = emod.emod_for(43.0, builder=b, cache_dir='fake')            # another bin: a miss
+    assert e3 is not e1 and len(calls) == 2 and calls[1][0] == 45.0
+    emod.clear_memory_cache()
+
+
+def test_emod_on_grid_cached_and_used_by_edinterp():
+    from hypernet import edinterp, srf
+    emod.clear_memory_cache()
+    e = emod.emod_for(36.7, builder=_fake_builder([]), cache_dir='fake')
+    grid = np.arange(400.0, 900.0, 0.48)
+    m = srf.SRFModel('E', [2.3, 0.0, 0.0], np.zeros((3, 3)))
+    a = emod.emod_on_grid(e, grid, m)
+    b = emod.emod_on_grid(e, grid, srf.SRFModel('E', [2.3, 0.0, 0.0], np.zeros((3, 3))))
+    assert a is b and not a.flags.writeable
+    np.testing.assert_allclose(a, srf.convolve_to_grid(e['lam'], e['E'], grid, 2.3), rtol=1e-13)
+    assert edinterp.model_on_grid(e, grid, m) is a                  # edinterp uses the cache
+    gl = grid[1:-1] + 0.2
+    E = srf.convolve_to_grid(e['lam'], e['E'], grid, 2.3)
+    out = edinterp.interpolate_ed_to_l(grid, E, gl, emod=e, srf_irr=m, srf_rad=2.8)
+    np.testing.assert_allclose(out, srf.convolve_to_grid(e['lam'], e['E'], gl, 2.8), rtol=1e-10)
+    emod.clear_memory_cache()
+
+
+@needs_emod
+def test_emod_for_builds_and_stores(tmp_path):
+    """A cache miss builds with build_emod and stores the npz; a second process
+    (memory cleared) reads it back."""
+    emod.clear_memory_cache()
+    e = emod.emod_for(36.7, cache_dir=str(tmp_path))
+    files = os.listdir(tmp_path)
+    assert len(files) == 1 and files[0].startswith('emod_sza35.00_pwv15.0')
+    assert not e['cached']
+    emod.clear_memory_cache()
+    e2 = emod.emod_for(34.0, cache_dir=str(tmp_path))
+    assert e2['cached'] and e2 is not e
+    np.testing.assert_array_equal(e2['E'], e['E'])
+    emod.clear_memory_cache()

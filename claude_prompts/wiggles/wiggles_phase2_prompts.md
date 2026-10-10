@@ -400,6 +400,80 @@ checks: the L1C variable list, and the time of one `srf` call.
     `claude_prompts/wiggles/phase2_exit.md`, as proposed in task 10.*
    >A. Use the default
 
+### Build #2 -- 2026-10-07 (Opus 5.5)
+
+The interface is recorded in the Logs ("Build #2").  It raises two choices
+for later tasks.
+
+1. **How the new uncertainty terms enter (task 7).**  In the processor,
+   punpy propagates only input *dataset variables* (their `u_rel_*` and
+   err_corr), and the water default is `mcsteps = 0`.  *Default: both
+   routes, with the first one shipped.*
+   - *(a) **Shipped in the snippet:** the SRF parameters (FWHM_E, FWHM_L
+     coefficients) and the E/L wavelength shift and stretch become extra
+     measurement-function inputs.  Their uncertainties sit as
+     `u_rel_systematic_indep_*` variables in the irradiance dataset, so the
+     processor propagates them without code changes once `mcsteps > 0`.*
+   - *(b) **In `interpolate_ed_to_l`:** its own punpy MC that returns the
+     three components directly, for our Phase 3 use and for tests.*
+   - *(a) and (b) must agree in a test.*
+   >A. Go with the default
+2. **Telling Kevin about `InterpolationWavClearSky`.**  The processor
+   already has an eq.-14-style interpolator.  It uses a 3 nm placeholder SRF
+   and, as written, returns values on the irradiance pixels rather than the
+   radiance pixels.  *Default: no message now.  Mention it in the Phase 2
+   exit report and in the next note to Kevin, as context for why the
+   measured-SRF version matters, and ask whether RBINS ever ran it on water
+   data.*
+   >A. Go with the default
+
+### Build #4b -- 2026-10-10 (Opus 5.5)
+
+The E and Ld window offsets carry a **common per-window pattern**:
+- 0.13 nm rms about each sequence's straight line;
+- the same on all 7 instruments and both channels (correlation 0.54-0.95,
+  median 0.79);
+- large at 415 (−0.20), 445 (+0.14), 505 (−0.23), 535 (+0.12), 605 (+0.25)
+  and 855-865 nm (−0.10 to −0.15).
+
+Spectrometers with different pixel grids cannot share a pixel dispersion
+error, so it comes from the reference or the method.  I now subtract it
+before the shift + stretch fit (shipped as
+`hypernet/data/wavescale_window_pattern.csv`).  That brings χ²ν from ~5 to
+~1.5 and the per-sequence error to 0.02-0.05 nm.
+
+1. **Where the pattern comes from.**  There are two candidates, and they
+   matter differently for `srf`:
+   - **(a) A method artifact.**  An asymmetric HYPSTAR SRF (all HYPSTARs
+     share the design), or line-shape mismatch with a Gaussian SRF, shifts
+     each window's apparent centroid by an amount set by its line mix.
+     Then nothing is wrong with any wavelength.  The pattern only has to be
+     removed from the scale fit, as now.
+   - **(b) HSRS line positions or shapes off by ~0.1-0.3 nm in some
+     windows.**  Then Emod carries them too, and `srf` places the model's
+     lines wrongly there.  That costs gain in those windows (the G1
+     tolerance is 0.05 nm).
+
+   *Default: extend task 9b (the non-Gaussian SRF twin check) with an
+   **asymmetric** SRF.  Observe the twin through it, run the template /
+   wavelength-scale fit, and see whether the window pattern appears.  If it
+   does, it is (a).  If not, compare HSRS with a second solar atlas (e.g.
+   Kurucz 2005 or the Chance & Kurucz 2010 irradiance) in the worst
+   windows.*
+2. **The Q8 fallback threshold.**  Per-sequence errors with the pattern
+   removed are 0.021/0.027 nm on VEIT L1A (E/Ld, with per-pixel errors).  On
+   Release 2 L2B (no per-pixel errors) the medians are 0.023-0.053 nm, and
+   0-100 % of sequences per instrument pass 0.03 nm.  *Default: keep
+   0.03 nm.  The fallback is the calibration-period median (task 6 stores
+   it); the period scatter is 0.01-0.03 nm, so the median is good to
+   ≲ 0.01 nm.  Revisit with the L1A delivery, which has per-pixel errors.*
+3. **Is the correction needed?**  *Default: yes, apply it.*  E's scale
+   (pattern removed) has a shift of 0 to +0.05 nm and a stretch of +0.03 to
+   +0.08 nm.  At the ends that is up to ~0.13 nm, above G1's 0.05 nm.  Ld's
+   stretch is +0.04 to +0.11 nm.
+
+>A. Go with all of your defaults
+
 ## Logs
 
 ### 2026-10-05 -- Doc refreshed after G1 (Opus 5.5)
@@ -442,3 +516,339 @@ checks: the L1C variable list, and the time of one `srf` call.
     through Emod_L (Q8).
 - Read-only checks only: the VEIT L1C variable list and one timed call.
 
+
+### 2026-10-07 -- Build #2: the processor's interface (Opus 5.5)
+
+- JXP accepted all 11 Setup #1 defaults.
+- **Fetched** `hypernets_processor` at Kevin's pinned commit `9a12819a…`
+  (2026-03-20) into `context/hypernets_processor/` (same paths as the repo;
+  `SOURCE.txt` lists them):
+  - the `interpolation/` package (driver, factory, the wavelength and time
+    measurement functions);
+  - the water and land default configs;
+  - the ATBD page `interpolate.rst`.
+- **Diff against `main` (Q4):** none.  On 2026-10-07 `main` *is*
+  `9a12819a…`; the public repo has not moved since March.
+- **The class to mirror:** `InterpolationWavLinear(punpy.MeasurementFunction)`
+  in `interpolation/measurement_functions/interpolate_wav_linear.py`.
+  - `meas_function(self, rad_wavs, irr_wavs, irr)` returns the irradiance on
+    `rad_wavs`, via `scipy.interpolate.interp1d(irr_wavs, irr, axis=0,
+    fill_value="extrapolate")`.  It **extrapolates** at the ends (unlike
+    `np.interp`, which holds the end values).  If `irr_wavs` is 2-D (punpy's
+    broadcast), it uses column 0.
+  - `get_name()` (staticmethod) returns `"InterpolationWavLinear"`, the key
+    the config selects.
+  - `get_argument_names()` returns `["radiance_wavelength", "wavelength",
+    "irradiance"]`: the dataset variable names punpy reads, in argument
+    order.
+  - No `setup` (it inherits punpy's no-op).
+- **How it is called** (`interpolation/interpolate.py`,
+  `Interpolate.interpolate_irradiance`):
+  - **Registration:** `interpolation_factory.py` holds a list
+    `interpolators`.  `InterpolationFactory(*args, **kwargs)` instantiates
+    each and keys it by `get_name()`.  The config key
+    `measurement_function_interpolate_wav` picks one; water and land both
+    default to `InterpolationWavLinear`.  **A new class needs one import and
+    one list entry there, plus the config value.**
+  - **Construction (water):** `factory(prop=punpy.MCPropagation(mcsteps,
+    dtype="float32", parallel_cores=1), corr_dims="wavelength",
+    yvariable="irradiance")`.
+  - **`setup` is always called:** `setup(np.nanmean(SZA of the irradiance
+    scans), network, irradiance wavelengths)`.  There is **no instrument ID
+    or date**, which our snippet needs to pick its SRFs.
+  - **Inputs:** the L1C dataset with `wavelength` renamed to
+    `radiance_wavelength`, and the L1B irradiance dataset (`wavelength`,
+    `irradiance` on (wavelength, scan)).
+  - **If `mcsteps > 0`:** `propagate_ds_specific(["random",
+    "systematic_indep", "systematic_corr_rad_irr"], ds_l1c, ds_l1b_irr,
+    ds_out_pre=…, use_ds_out_pre_unmodified=True, store_unc_percent=True)`.
+    punpy draws the inputs from their `u_rel_<comp>_<var>` and `err_corr_*`
+    (obsarray) attributes, runs `meas_function` per draw, and writes
+    `u_rel_<comp>_irradiance` in % with the error-correlation matrices.
+    **The measurement function computes only the value; uncertainty flows
+    through the datasets.**
+  - **Otherwise:** `run(...)` gives only the value.
+  - Then a separate time interpolation (`InterpolationTimeLinearCoscorrected`)
+    takes Ed to the Lu scan times, with the same three components.
+- **The water default config has `mcsteps= 0`** (land: 100).  So the
+  operational water L1C propagates **no** uncertainty through interpolation.
+  This most likely explains Phase 0's all-zero L1C `u_rel_random`.
+- **A model-based interpolator already exists:** `InterpolationWavClearSky`.
+  - Its `setup` loads a clear-sky high-resolution BOA irradiance for the
+    nearest of SZA {0, 10, 20, 40, 60, 70, 80}
+    (`data/quality_comparison_data/solar_irradiance_hypernets_sza*_highres_w.nc`,
+    in the repo).
+  - It uses a **3.0 nm Gaussian "bandwidth" for every irradiance pixel**
+    (10 nm in the SWIR) and comet_maths `interpolate_1d_along_example`, then
+    band-integrates with `matheo`.
+  - It is in effect eq. 14 with a placeholder SRF, not the measured E or L
+    SRFs.
+  - As written, **its output is band-integrated on the *irradiance* pixels:
+    `rad_wavs` is never used.**  Unless that is intended upstream, it would
+    not return values on the L grid.
+  - The ATBD says it "has been implemented, but is not currently
+    operationally used … [pending whether the improvement justifies] their
+    significantly slower runtime".
+  - Worth telling Kevin: our snippet is the same idea with measured, per-
+    channel SRFs.
+- **Versions:** the processor requires `punpy>=1.0.0`, `comet_maths>=1.0.0`,
+  `obsarray>=1.0.0` and `matheo`.  `ocean14` has punpy 1.1.0 and obsarray
+  1.0.3, compatible.  `matheo` is not installed (only the clear-sky class
+  needs it).
+- **Consequences for later tasks:**
+  - **Task 8 (snippet).**
+    - Subclass `punpy.MeasurementFunction` with the same
+      `meas_function(rad_wavs, irr_wavs, irr)` and argument names.
+    - Do the SRF-table and Emod loading in `setup(szas, network, irr_wavs,
+      system_id=None, date=None)`; the extra keywords are what RBINS must
+      wire in (one call site in `interpolate.py`).
+    - Match the linear class's extrapolation at the ends for `linear`.
+    - Handle 2-D `irr_wavs` the same way.
+  - **Task 7 (punpy).**
+    - In the processor, punpy propagates only dataset variables.  So for the
+      new SRF, Emod and wavelength-fit terms to flow through unchanged
+      processor code, they must enter as extra **input variables** of the
+      measurement function: e.g. `get_argument_names()` += SRF parameters
+      carried in the irradiance dataset with their own
+      `u_rel_systematic_indep_*` and err_corr.
+    - The alternative is a post-hoc quadrature term, which the processor
+      would not apply without changes.
+    - I'll put this design choice in Q&A before task 7.
+  - **Precision:** the MC runs in float32.
+- `context/` is outside `docs/`, so nothing new is published.  No package
+  code changed; `pytest -q` not rerun (92 at task 11).
+- Slip: a first fetch loop relied on word-splitting that zsh doesn't do, and
+  created empty stray directories (`hypernets_processor/…` at the repo root
+  and under `context/`).  I removed them (empty, untracked) and refetched
+  with a bash array.
+
+### 2026-10-08 -- Build #3: `interpolate_ed_to_l` hardened (Opus 5.5)
+
+- JXP accepted both Build #2 defaults (uncertainty routes (a) + (b); mention
+  `InterpolationWavClearSky` in the exit report and the next note to Kevin).
+- **`hypernet/srf.py` (Setup Q1).**  New pixel-convolution section:
+  - `convolve_to_grid` moved here from `twin.py`; `twin` re-exports it, so
+    the Phase 1 code is unchanged;
+  - `convolution_matrix(lam_hr, grid, fwhm, nsig=5, cache=True)` returns a
+    sparse CSR matrix, rows normalised;
+  - an LRU cache (64 entries) keyed on the Emod grid, the pixel grid and
+    `srf_key(fwhm)`.  SRFModels, constants and arrays are cached; plain
+    callables are not (two lambdas share nothing hashable);
+  - `fwhm_values(fwhm, grid)` evaluates any SRF spec.
+
+  `edinterp` no longer imports `twin`.
+- **`hypernet/edinterp.py` rewritten.**  Module docstring with the three
+  equations, plus:
+  - `METHODS = (linear, ruddick2023, srf)`; `NULL_METHODS = (cubic, sinc)`,
+    still accepted (Q2).
+  - `UNC_COMPONENTS` = the three L1C names (Q5); `SRF_THRESHOLD = 0.15`;
+    `DFWHM_BAND = (400, 680)` (Q7).
+  - `delta_fwhm(srf_irr, srf_rad, band)` and `choose_method(...)`: G1's
+    rule, inclusive with a 1e-9 nm tolerance.  On the Release 2 models,
+    122304 → `srf` and 122305 → `linear`.
+  - `linear_weights(wav_irr, wav_rad)` → (i, w), with `np.interp`'s hold at
+    the ends.
+  - `interpolate_ed_to_l(wav_irr, irradiance, wav_rad, *, emod, srf_irr,
+    srf_rad, method, u_rel_random, u_rel_systematic_indep,
+    u_rel_systematic_corr_rad_irr, full_output)`:
+    - **validation:** wav_irr 1-D, finite, strictly increasing; wav_rad
+      finite; irradiance (n_E,) or (n_E, n_scan); method; required SRFs and
+      Emod;
+    - **2-D irradiance:** the model factors are computed once, and the ratio
+      is interpolated per scan;
+    - **NaN locality:** a NaN in E reaches only the L pixels that use it with
+      non-zero weight;
+    - **edges (Q10):** an L pixel beyond the E grid, or whose SRF (or its E
+      neighbours', ±3σ) reaches past Emod, gets `linear` and
+      `info['fallback'] = True`;
+    - **uncertainty:** the input components are propagated to first order.
+      Random adds in quadrature over the two neighbours, weighted by their
+      share of the (model-ratio) sum.  Systematic is taken as fully
+      correlated between neighbours; task 7 refines this with the err_corr
+      matrices and adds the SRF/Emod/wavelength terms.
+    - **Returns** `Ed`, or `(Ed, info)` when `full_output` (the default if any
+      `u_rel_*` is given): `method`, `fallback`, `u_rel_<component>` in %.
+- **Speed.**  On a full-size 1536 → 1538 `srf` call with SRFModels and a
+  0.01 nm 380-1000 nm Emod: 25 ms cold, **4.5 ms** with the matrices cached.
+- **Tests:** `test_edinterp.py` grew from 6 to 16 tests.
+  - The machine-precision special cases are unchanged.
+  - New: 2-D vs per-column, validation errors, NaN locality, edge fallback,
+    the threshold rule (synthetic and on the 122304/122305 Release 2
+    models), the analytic linear propagation (random and systematic), a
+    constant systematic preserved by all three methods, cache identity, and
+    timing (budget < 1 s cold, < 50 ms warm).
+- **Test fix in `test_twin.py`:** `test_delta_line_observed_fwhm3` failed
+  after the move.  The new convolution differs from the old loop by
+  3e-15, but on exactly noise-free data `curve_fit`'s covariance is
+  undefined, so the test had passed on rounding luck.  It now adds 1e-5
+  seeded noise, as the other synthetic fit tests do.
+- **Phase 1 reproduces:** `hypernet/wiggles/phase2_check_phase1_repro.py`
+  reruns task 9's metrics for one scene.  The maximum relative difference
+  from the stored parquet is 1.9e-10 (VEIT-like scene, 340 rows), on a value
+  at the numerical floor.  It writes nothing.
+- `pytest -q`: **102 passed** (was 92).
+
+### 2026-10-08 -- Build #4: SRF self-calibration (Opus 5.5)
+
+- New flat module `hypernet/srfcal.py` (Setup Q1):
+  - `calibrate_srf(wav, spectrum, channel='E', err=None, ref=None,
+    windows=None, veil=False, via_grid=None, shape='gauss', scale_cov=True,
+    instrument='', return_fits=False, meta=None)` → `SRFModel`, and the
+    window table with `return_fits`.
+  - It runs `srf.fit_template_windows` against TSIS-1 HSRS in air (loaded
+    once, `default_reference`), then `SRFModel.from_lines`: FWHM(λ)
+    quadratic with covariance (chi²-inflated), and the weighted-mean centroid
+    offset with its error.
+  - **Veil fixed at 0** by default, as in the shipped VEIT models.
+  - Gaussian `fit_lines` is not used (a diagnostic only).
+- **Quality flags** in `model.meta['flags']`; `meta['ok']` only if there
+  are none.
+  - **`low_blue_signal`** (plan §9's low-sun risk) is raised by any of:
+    - fewer than 3 good windows in 390-450 nm;
+    - median blue S/N < 100 (when `err` is given);
+    - FWHM error at 410 nm > 0.05 nm (inside G1's ≲ 0.07 nm FWHM_E
+      tolerance).
+  - Also `few_windows` (< 8 good windows) and `fit_failed`.
+  - `meta` also records `n_windows`, `n_blue`, `blue_snr`,
+    `fwhm_err_blue`, `method`, `veil` and `shape`.
+- **Tests** (`hypernet/tests/test_srfcal.py`, 5):
+  - **Synthetic:** a 1500-line "solar" spectrum observed by `twin.observe`
+    with a known quadratic FWHM(λ) (2.72 nm at 410 → 2.27 at 700) and 0.1 %
+    noise.
+    - FWHM at 410-850 nm is recovered with |pull| < 3 (≈ ±1.2σ in
+      practice) and errors < 0.03 nm; offset consistent with 0.
+    - A +0.05 nm sampling shift is recovered as offset −0.05 nm (error
+      < 0.01).
+    - With the blue scaled to 2 % (S/N ≈ 17), the fit returns
+      `low_blue_signal`; it is also raised without `err`, from the FWHM
+      error.
+    - Mismatched lengths raise; an all-NaN spectrum gives `fit_failed` +
+      `few_windows`.
+  - **VEIT (tier 2, ran):** the VEIT E (scan mean, flattened scan-scatter
+    errors) reproduces `hypernet/data/veit_srf_model.json` E within
+    0.01 nm at 420-660 nm.  It passes the flags with margin: blue S/N 455,
+    FWHM error at 410 nm 0.029 nm, 27 windows (6 blue); offset
+    +0.058 ± 0.018 nm.
+  - A synthetic run takes ~0.1 s.
+- `pytest -q`: **107 passed**.
+- Not done here: the per-sequence fallback to the calibration-period median
+  (Q8) belongs to task 4b/6; whether the 0.05 nm / S/N 100 thresholds catch
+  real low-sun sequences is best checked on the delivery (or Release 2 E
+  at SZA ≥ 60°) in task 6.
+
+### 2026-10-10 -- Build #4b: wavelength-scale fit (Opus 5.5)
+
+- **`hypernet/srfcal.py`** gained:
+  - **`fit_wavelength_scale(wav, spectrum, srf=None, ref=None, err=None,
+    windows=None, via_grid=None, pattern=None, return_fits=False)`.**
+    - In each template window it fits the centroid offset dlam with the SRF
+      width fixed by `srf` (`_fit_window_shift`: continuum × the reference
+      through a Gaussian, evaluated on `via_grid` and resampled for L2
+      irradiance), or free (`fit_srf_template`) if `srf` is None.
+    - It subtracts the optional common `pattern`, then fits a weighted
+      straight line to −dlam (chi²-inflated covariance).
+    - Convention (twin case iv): a pixel reported at λ samples
+      λ + shift + stretch (λ − 630)/240.
+    - Returns shift, stretch, cov, their errors, `max_err` (largest 1σ of
+      the correction over 390-870 nm), `slope_per100nm` (8d's dlam slope),
+      chi2_nu, n_windows, and flags `uncertain` (max_err > 0.03, Q8),
+      `few_windows` and `fit_failed`.
+  - `correct_wavelengths(wav, scale)`: the true grid.  Apply it to E's grid
+    before `interpolate_ed_to_l`.
+  - `scale_or_fallback(scale, fallback)`: Q8's per-sequence-else-period
+    rule.  The period medians come with task 6's table.
+  - `load_window_pattern()`, and the constants `LAM0`, `HALF`,
+    `MAX_SCALE_ERR = 0.03` and `G1_TOLERANCE = 0.05`.
+- **Tests** (`test_srfcal.py`, 5 → 12):
+  - **Known shift/stretch** (twin case iv: (0.1, 0), (−0.05, 0.08),
+    (0.03, −0.05)) at VEIT-like noise (0.2 %/pixel): recovered within 3σ
+    and to < 0.02 nm, with max_err < 0.03.  Correcting the grid removes the
+    error.  SRF free and SRF fixed agree.
+  - The `via_grid` (L2 resampling) case is recovered.
+  - 5 % noise gives `uncertain`, and the fallback is used.
+  - A constant pattern moves the shift by exactly that constant.
+  - The shipped pattern file loads.
+- **`hypernet/wiggles/phase2_wavescale.py`.**  VEIT L1A (E and Ld, with
+  per-pixel errors, `veit_srf_model.json` widths) and the 224 Release 2 L2B
+  (Ld native; E through the proxy 122304 E grid; `release2_srf_models.json`
+  widths; unweighted), each with and without the pattern.  450 fits in 52 s.
+  Writes:
+  - `$OS_COLOR/.../phase2/wavescale_per_sequence.parquet`;
+  - `hypernet/wiggles/phase2_wavescale.csv` (per instrument × channel);
+  - `hypernet/wiggles/phase2_wavescale_windows.csv` (the per-window
+    pattern per group);
+  - `hypernet/data/wavescale_window_pattern.csv` (the common pattern; now
+    in `package_data`, with `data/*.csv` added to `setup.py`).
+
+  Diagnostic: `hypernet/wiggles/phase2_wavescale_veit_windows.py` prints
+  VEIT's window offsets.
+- **Results:**
+  - **The slope agrees with Phase 0 8d.**  Raw dlam slope per 100 nm: Ld
+    −0.019 to −0.055, E −0.006 to −0.026; 8d had −0.026 to −0.050 and
+    −0.005 to −0.024.
+  - **Without the pattern, no sequence reaches 0.03 nm.**  Per-sequence
+    max_err is 0.05-0.09 nm and χ²ν ≈ 5 (VEIT 29).
+  - **The common pattern:** 0.13 nm rms, correlated 0.54-0.95 across all
+    7 instruments × 2 channels, with a standard error of 0.013 nm per
+    window.  Not instrumental (see Q&A "Build #4b").
+  - **With it removed:**
+    - χ²ν ≈ 1-2.
+    - Per-sequence max_err medians are 0.021-0.048 nm for E and
+      0.027-0.053 for Ld.  All are inside G1's 0.05 nm but one (121231 Ld,
+      0.053).
+    - VEIT: E 0.021, Ld 0.027 nm; both pass Q8's 0.03.
+  - **Scale errors** (pattern removed, medians):
+    - E: shift −0.03 to +0.05 nm, stretch +0.01 to +0.08 nm;
+    - Ld: shift −0.04 to +0.05, stretch +0.04 to +0.11.
+    - At the spectrum ends the E correction reaches ~0.1 nm, which exceeds
+      G1's tolerance, so the correction is needed.
+    - Sequence-to-sequence scatter within an instrument is 0.01-0.03 nm, so
+      the calibration-period median is a good fallback.
+- `pytest -q`: **114 passed**.
+- Open (Q&A "Build #4b"): the pattern's origin, a method artifact (e.g. an
+  asymmetric SRF) or HSRS.  It decides whether `srf` inherits it.  The
+  default is an asymmetric-SRF case in task 9b.  The pattern was estimated
+  from the same Release 2 data it is applied to.
+
+### 2026-10-10 -- Build #5: the Emod cache (Opus 5.5)
+
+- JXP accepted all three Build #4b defaults.  The asymmetric-SRF case joins
+  task 9b; the fallback threshold stays 0.03 nm; the scale correction is
+  applied.
+- **`hypernet/emod.py`, new section** (Setup Q9):
+  - **The grid:** `SZA_STEP = 5` (clipped to 0-85°), `PWV_GRID = (7.5, 15,
+    30)` mm, `OZONE_FIXED = 300` DU, `PRESSURE_FIXED = 1013.25` hPa, and
+    `DIFFUSE_FRACTION = 0.15`.  `snap(sza, pwv)` gives the grid point:
+    nearest 5°, and nearest PWV in log.
+  - **`emod_for(sza, pwv_mm=15, ozone_du=None, pressure_hpa=None,
+    diffuse_fraction=0.15, cache_dir=None, builder=None)`.**
+    - It snaps, then returns one in-memory entry per bin: **the same object
+      for every call in the bin**.
+    - A miss calls `build_emod`, which reads or writes its npz under
+      `ref/emod/` (~3.5 s to build).
+    - The entry adds `E = F0[(1 − f_d) T_direct + f_d T_diffuse]`, a model
+      *shape* (no cos SZA, no aerosol, which the measured/model ratio
+      absorbs), plus `sza_bin`, `pwv_bin`, the fixed ozone/pressure actually
+      used, and a `key`.
+    - The ozone and pressure arguments are accepted but fixed by the grid,
+      and the values used are reported.
+  - **`emod_on_grid(entry, grid, srf)`**: Emod_X on a grid, cached per
+    (entry, grid, SRF key), returned read-only, LRU of 64.  The sparse
+    matrix underneath is already cached by `srf.convolution_matrix`.
+  - `clear_memory_cache()`.
+- **`edinterp.model_on_grid`** now uses `emod_on_grid` when given an
+  `emod_for` entry, so `interpolate_ed_to_l(..., emod=emod_for(sza, pwv))`
+  reuses both convolutions across calls and scans.
+- **Tests** (`test_emod.py`, +4):
+  - **Tier 1, with a fake builder:**
+    - the snapping (including the log-nearest PWV and the clipping);
+    - two calls in a bin return the same object and build once, with the
+      fixed ozone and pressure passed; another bin is a miss;
+    - `emod_on_grid` is cached and read-only, and `edinterp.model_on_grid`
+      returns the cached array;
+    - `interpolate_ed_to_l` with an entry reproduces Emod_L when
+      E = Emod_E.
+  - **Tier 2 (ran):** a miss builds into a tmp dir and stores
+    `emod_sza35.00_pwv15.0…npz`.  After clearing memory, a call in the same
+    bin (SZA 34) reads it back (`cached`), identical.
+- `pytest -q`: **118 passed**.

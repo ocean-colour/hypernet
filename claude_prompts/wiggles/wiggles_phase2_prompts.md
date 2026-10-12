@@ -474,6 +474,24 @@ before the shift + stretch fit (shipped as
 
 >A. Go with all of your defaults
 
+### Build #6 -- 2026-10-10 (Opus 5.5)
+
+1. **122303 sits on the threshold.**  Its Release 2 ΔFWHM (median 400-680 nm)
+   is **0.138 nm**, which the G1 rule maps to `linear`.  But E from L2
+   reads too wide:
+   - the VEIT validation (Phase 0c) puts the L2 ΔFWHM bias at +0.064 nm;
+   - VEIT's own L1A ΔFWHM is 0.477 vs 0.390 from L2 (+0.087).
+
+   With the bias corrected, 122303 is **0.20 nm → `srf`**, and 121231 is
+   0.146 (just under).  Phase 0 put 122303 among the E ≈ L instruments
+   ("within 0.07 nm") on a different statistic.
+   *Default: ship the L2-measured method (`linear` for 122303), with
+   `method_sensitive = True` in the table.  Decide 122303 and 121231 from
+   their L1A E widths when the delivery arrives (task 6 reruns from Phase
+   0b's `srf_models.parquet`).*
+
+>A.  Your default is fine
+
 ## Logs
 
 ### 2026-10-05 -- Doc refreshed after G1 (Opus 5.5)
@@ -852,3 +870,68 @@ before the shift + stretch fit (shipped as
     `emod_sza35.00_pwv15.0…npz`.  After clearing memory, a call in the same
     bin (SZA 34) reads it back (`cached`), identical.
 - `pytest -q`: **118 passed**.
+
+### 2026-10-10 -- Build #6: the per-instrument SRF table (Opus 5.5)
+
+- No new JXP answers since Build #5.
+- **`hypernet/wiggles/phase2_srf_table.py`** writes
+  **`hypernet/data/srf_table.csv`**: 20 rows, the 7 instruments × E/Ld ×
+  9 calibration periods, plus the VEIT L1A pair.  All rows are
+  `provisional`.
+  - **Sources:**
+    - `release2_l2b`: `release2_srf_models.json`, the clear-sky median
+      template fits;
+    - `veit_l1a`: `veit_srf_model.json`, preferred for 122304 @
+      2024-11-08/12.
+    - When the delivery is fitted, a `phase0b_l1a` source ranks first
+      (`SOURCE_RANK`).
+  - **Per row:**
+    - the FWHM quadratic and its 6 covariance terms, lam_ref/scale/min/max,
+      chi2, and the centroid offset ± error;
+    - `fwhm_*` and `fwhm_err_*` at 400/550/700 nm;
+    - `valid_from`, **the channel's own calibration date** (IRR for E, RAD
+      for Ld), and `n_sequences`, `e_grid` and a note;
+    - `delta_fwhm` (`edinterp.delta_fwhm`, median over 400-680 nm) and
+      `method` (G1 rule);
+    - for L2 rows, `delta_fwhm_l1a_est` = delta + 0.064 nm, the L2-vs-L1A
+      width bias from `phase0c_validation.csv` (Ld − E bias, median
+      400-680 nm, one VEIT sequence), with `method_l1a_est` and
+      `method_sensitive`;
+    - the **wavelength-scale correction**: calibration-period medians of
+      task 4b's shift and stretch (pattern removed), with errors
+      1.2533 sd/√n, plus n and frac_ok.  The VEIT rows use their single
+      sequence and its fit errors.
+- **`hypernet/srftable.py`:**
+  - `load_srf_table`, `row_for(instrument, channel, date)` (latest
+    `valid_from` ≤ date, then the preferred source; dates as
+    'YYYY-MM-DD', datetime or 'YYYYMMDDTHHMM');
+  - `model_from_row`, `srf_for(...)` → SRFModel, `scale_for(...)` → dict
+    for `srfcal.correct_wavelengths` / `scale_or_fallback`, and
+    `method_for(instrument, date)`;
+  - **G0 switches, provisional:** `TABLE_IS_DEFAULT = True` (G0(b)
+    preliminary pass) and `APPLY_CENTROID_OFFSET = False` (G0(c) relative
+    pass; the task 4b scale correction is applied instead).  The docstring
+    says how to flip them when G0 closes.
+- **Results:**
+  - **`srf`:** 120242 (ΔFWHM 0.39), 122302 (0.46), 122304 (0.49 @2023;
+    0.39 L2 / **0.48 L1A** @2024-11).
+  - **`linear`:** 121222 (−0.05, −0.03), 121231 (0.08), 122305 (0.01),
+    and 122303 (0.138).
+  - The L1A-estimated ΔFWHM flips **122303 to `srf` (0.20)**, and leaves
+    121231 at 0.146, just under 0.15.  See Q&A "Build #6".
+  - **Scale corrections** (period medians): E shift 0.00-0.05 nm, stretch
+    0.03-0.08; Ld shift −0.05 to +0.05, stretch 0.03-0.11; errors ≤ 0.016.
+- **Tests** (`hypernet/tests/test_srftable.py`, 6):
+  - the CSV's columns, instruments and provisional flags;
+  - the G1 rule row by row, and one method per pair;
+  - valid_from = the channel's calibration date;
+  - all covariances PSD, with `model_from_row` reproducing `fwhm_550`;
+  - `srf_for` preference and dates, including RAD/IRR dates that differ
+    (on 2024-11-10, Ld uses the new period and E the old), and KeyErrors;
+  - `method_for` agrees with `choose_method` on the looked-up pair;
+  - `scale_for` with `correct_wavelengths` and the fallback;
+  - the G0 switches.
+- `pytest -q`: **124 passed**.
+- Not yet tested: whether `calibrate_srf`'s low-blue flag catches real
+  low-sun sequences.  Release 2 E comes from L2 (no per-pixel errors, the
+  proxy grid), so this waits for the L1A delivery.

@@ -245,3 +245,112 @@ def test_timing_1536_to_1538():
     warm = time.perf_counter() - t0
     assert out.shape == (1538,) and np.all(np.isfinite(out))
     assert cold < 1.0 and warm < 0.05
+
+
+# --- Phase 2 task 7: punpy propagation ----------------------------------------------
+
+def _models(sig=(0.02, 0.01, 0.005)):
+    cov = np.diag(sig) ** 2
+    return srf.SRFModel('E', [2.3, 0, 0], cov), srf.SRFModel('Ld', [2.8, 0, 0], cov)
+
+
+def test_propagation_seeded_reproducible():
+    em = _emod()
+    E = _measured(em, 2.3)
+    sE, sL = _models()
+    kw = dict(emod=em, srf_irr=sE, srf_rad=sL, u_rel_random=0.5, u_rel_systematic_indep=1.0,
+              scale_irr=dict(shift=0.0, stretch=0.0, shift_err=0.01, stretch_err=0.01),
+              mcsteps=30)
+    a = edinterp.propagate_ed_to_l(GE, E, GL, seed=7, **kw)[1]
+    b = edinterp.propagate_ed_to_l(GE, E, GL, seed=7, **kw)[1]
+    c = edinterp.propagate_ed_to_l(GE, E, GL, seed=8, **kw)[1]
+    for k in ('u_rel_random', 'u_rel_systematic_indep'):
+        np.testing.assert_array_equal(a[k], b[k])
+        assert not np.array_equal(a[k], c[k])
+    state = np.random.get_state()[1].copy()                 # the global RNG is restored
+    edinterp.propagate_ed_to_l(GE, E, GL, seed=9, **kw)
+    np.testing.assert_array_equal(np.random.get_state()[1], state)
+
+
+def test_propagation_linear_matches_analytic():
+    """method='linear', no SRF / Emod / scale uncertainty: MC equals the
+    first-order analytic propagation of the input components."""
+    E = 1.0 + 0.3 * np.sin(GE / 17.0)
+    u = 0.5 + 0.001 * (GE - 400)
+    ed, info = edinterp.propagate_ed_to_l(GE, E, GL, method='linear', u_rel_random=u,
+                                          u_rel_systematic_indep=u, mcsteps=3000, seed=3)
+    _, ana = edinterp.interpolate_ed_to_l(GE, E, GL, method='linear', u_rel_random=u,
+                                          u_rel_systematic_indep=u)
+    np.testing.assert_allclose(ed, np.interp(GL, GE, E), rtol=1e-12)
+    for k in ('u_rel_random', 'u_rel_systematic_indep'):
+        r = info[k] / ana[k] - 1
+        assert abs(np.median(r)) < 0.03 and np.max(np.abs(r)) < 0.12, (k, np.median(r))
+    assert np.all(info['u_rel_systematic_corr_rad_irr'] == 0)
+
+
+@pytest.mark.parametrize('method', ['linear', 'srf'])
+def test_common_scale_error_is_systematic(method):
+    """A fully correlated 2 % scale error on E stays 2 % at every L pixel, in
+    the systematic component only, with error correlation ~1."""
+    em = _emod()
+    E = _measured(em, 2.3)
+    sE, sL = _models(sig=(0.0, 0.0, 0.0))
+    _, info = edinterp.propagate_ed_to_l(GE, E, GL, emod=em, srf_irr=sE, srf_rad=sL,
+                                         method=method, u_rel_systematic_indep=2.0,
+                                         mcsteps=400, seed=4, return_corr=True)
+    u = info['u_rel_systematic_indep']
+    assert np.ptp(u) < 1e-6 * u.mean()                  # one common factor per draw
+    assert u.mean() == pytest.approx(2.0, rel=0.15)
+    assert np.all(info['u_rel_random'] == 0)
+    assert np.min(info['err_corr_systematic_indep']) > 0.999
+    # a random input, by contrast, decorrelates
+    _, info2 = edinterp.propagate_ed_to_l(GE, E, GL, emod=em, srf_irr=sE, srf_rad=sL,
+                                          method=method, u_rel_random=2.0, mcsteps=400,
+                                          seed=4, return_corr=True)
+    c = info2['err_corr_random']
+    far = np.abs(np.subtract.outer(np.arange(GL.size), np.arange(GL.size))) > 3
+    assert np.max(np.abs(c[far])) < 0.4
+    assert np.all(info2['u_rel_systematic_indep'] == 0)
+
+
+def test_srf_terms_vanish_for_a_flat_model_and_grow_with_lines():
+    sE, sL = _models()
+    flat = (LAM, np.full(LAM.size, 1.7))
+    E = np.full(GE.size, 1.7)
+    _, info = edinterp.propagate_ed_to_l(GE, E, GL, emod=flat, srf_irr=sE, srf_rad=sL,
+                                         mcsteps=50, seed=5)
+    assert np.max(info['u_rel_systematic_indep']) < 1e-10
+    em = _emod()
+    E = _measured(em, 2.3)
+    _, info = edinterp.propagate_ed_to_l(GE, E, GL, emod=em, srf_irr=sE, srf_rad=sL,
+                                         mcsteps=50, seed=5)
+    assert 1e-3 < np.max(info['u_rel_systematic_indep']) < 10
+
+
+def test_emod_perturbation_terms():
+    em = _emod()
+    E = _measured(em, 2.3)
+    sE, sL = _models(sig=(0.0, 0.0, 0.0))
+    deeper = (em[0], em[1] ** 1.05)                          # deeper lines
+    scaled = (em[0], 1.1 * em[1])                            # a pure F0 scale
+    ed, info = edinterp.propagate_ed_to_l(
+        GE, E, GL, emod=em, srf_irr=sE, srf_rad=sL, mcsteps=10, seed=1,
+        emod_perturbations=[('depth', deeper, 0.5), ('f0', scaled, 1.0)])
+    alt = edinterp.interpolate_ed_to_l(GE, E, GL, emod=deeper, srf_irr=sE, srf_rad=sL)
+    np.testing.assert_allclose(info['u_rel_emod_depth'], 50.0 * np.abs(alt - ed) / ed,
+                               rtol=1e-10)
+    assert np.max(info['u_rel_emod_f0']) < 1e-10              # cancels in the ratio
+    np.testing.assert_allclose(info['u_rel_systematic_indep'], info['u_rel_emod'], rtol=1e-12)
+
+
+def test_propagation_2d_columns():
+    em = _emod()
+    E1 = _measured(em, 2.3)
+    E = np.stack([E1, 1.05 * E1], axis=1)
+    sE, sL = _models()
+    kw = dict(emod=em, srf_irr=sE, srf_rad=sL, u_rel_random=0.5, mcsteps=20)
+    ed, info = edinterp.propagate_ed_to_l(GE, E, GL, seed=10, **kw)
+    assert ed.shape == (GL.size, 2) and info['u_rel_random'].shape == (GL.size, 2)
+    e1, i1 = edinterp.propagate_ed_to_l(GE, E[:, 1], GL, seed=11, **kw)
+    np.testing.assert_allclose(ed[:, 1], e1, rtol=1e-14)
+    np.testing.assert_allclose(info['u_rel_random'][:, 1], i1['u_rel_random'], rtol=1e-12)

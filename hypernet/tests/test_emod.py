@@ -169,3 +169,20 @@ def test_emod_for_builds_and_stores(tmp_path):
     assert e2['cached'] and e2 is not e
     np.testing.assert_array_equal(e2['E'], e['E'])
     emod.clear_memory_cache()
+
+
+def test_emod_perturbations_factors():
+    emod.clear_memory_cache()
+    calls = []
+    b = _fake_builder(calls)
+    e = emod.emod_for(36.7, 15.0, builder=b, cache_dir='fake')
+    p = {n: (alt, f) for n, alt, f in emod.emod_perturbations(e, builder=b, cache_dir='fake')}
+    assert set(p) == {'sza', 'pwv', 'ozone'}
+    assert p['sza'][0]['sza_bin'] == 40.0 and p['sza'][1] == pytest.approx(2.5 / np.sqrt(3) / 5)
+    assert p['pwv'][0]['pwv_bin'] == 30.0
+    assert p['pwv'][1] == pytest.approx(np.log(1.5) / np.log(2.0))
+    assert calls[-1][2] == emod.OZONE_FIXED + 30.0 and p['ozone'][1] == pytest.approx(1.0)
+    e85 = emod.emod_for(85.0, 30.0, builder=b, cache_dir='fake')      # grid edges
+    q = {n: alt for n, alt, f in emod.emod_perturbations(e85, builder=b, cache_dir='fake')}
+    assert q['sza']['sza_bin'] == 80.0 and q['pwv']['pwv_bin'] == 15.0
+    emod.clear_memory_cache()

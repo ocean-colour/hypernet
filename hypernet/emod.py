@@ -390,14 +390,59 @@ def emod_for(sza, pwv_mm=15.0, ozone_du=None, pressure_hpa=None,
     if key in _EMOD_MEM:
         return _EMOD_MEM[key]
     build = builder or build_emod
-    e = dict(build(s, pwv_mm=w, ozone_du=OZONE_FIXED, pressure_hpa=PRESSURE_FIXED,
-                   cache_dir=cache_dir))
-    fd = float(diffuse_fraction)
-    e['E'] = e['F0'] * ((1.0 - fd) * e['T_direct'] + fd * e['T_diffuse'])
-    e.update(sza_bin=s, pwv_bin=w, ozone_du=OZONE_FIXED, pressure_hpa=PRESSURE_FIXED,
-             diffuse_fraction=fd, key=key)
+    e = _model_entry(build(s, pwv_mm=w, ozone_du=OZONE_FIXED, pressure_hpa=PRESSURE_FIXED,
+                           cache_dir=cache_dir), diffuse_fraction)
+    e.update(sza_bin=s, pwv_bin=w, ozone_du=OZONE_FIXED, pressure_hpa=PRESSURE_FIXED, key=key)
     _EMOD_MEM[key] = e
     return e
+
+
+def _model_entry(built, diffuse_fraction):
+    """A ``build_emod`` output plus the model spectrum ``E``."""
+    e = dict(built)
+    fd = float(diffuse_fraction)
+    e['E'] = e['F0'] * ((1.0 - fd) * e['T_direct'] + fd * e['T_diffuse'])
+    e['diffuse_fraction'] = fd
+    return e
+
+
+#: Default 1-sigma uncertainties of the Emod inputs (Phase 2 task 7): SZA from
+#: the 5 deg binning (uniform, 2.5/sqrt(3)); water vapour unknown to a factor
+#: 1 + pwv_rel = 1.5 (sigma of ln PWV = ln 1.5; the cache snaps by factors of
+#: 2); ozone 10 %.
+EMOD_UNC = dict(sza_deg=2.5 / np.sqrt(3.0), pwv_rel=0.5, ozone_rel=0.10)
+
+
+def emod_perturbations(entry, unc=None, cache_dir=None, builder=None):
+    """One-sided finite-difference perturbations of an :func:`emod_for` entry,
+    for the linearised Emod term of the uncertainty (task 7).
+
+    Returns a list of ``(name, alt_entry, factor)``: Ed computed with
+    ``alt_entry`` minus Ed with ``entry``, times ``factor``, is the 1-sigma
+    change in Ed for that input.  SZA uses the next 5 deg bin, water vapour
+    the next PWV_GRID column, ozone a +30 DU build at the same bin.  Inputs
+    with a zero uncertainty are skipped.
+    """
+    unc = dict(EMOD_UNC, **(unc or {}))
+    build = builder or build_emod
+    s, w, fd = entry['sza_bin'], entry['pwv_bin'], entry['diffuse_fraction']
+    out = []
+    if unc['sza_deg'] > 0:
+        s2 = s + SZA_STEP if s + SZA_STEP <= SZA_RANGE[1] else s - SZA_STEP
+        alt = emod_for(s2, w, diffuse_fraction=fd, cache_dir=cache_dir, builder=builder)
+        out.append(('sza', alt, unc['sza_deg'] / abs(s2 - s)))
+    if unc['pwv_rel'] > 0:
+        g = list(PWV_GRID)
+        w2 = g[g.index(w) + 1] if w != g[-1] else g[-2]
+        alt = emod_for(s, w2, diffuse_fraction=fd, cache_dir=cache_dir, builder=builder)
+        out.append(('pwv', alt, np.log1p(unc['pwv_rel']) / abs(np.log(w2 / w))))
+    if unc['ozone_rel'] > 0:
+        d = 30.0
+        alt = _model_entry(build(s, pwv_mm=w, ozone_du=OZONE_FIXED + d,
+                                 pressure_hpa=PRESSURE_FIXED, cache_dir=cache_dir), fd)
+        alt['key'] = ('emod_o3', s, w, OZONE_FIXED + d, fd, cache_dir or '')
+        out.append(('ozone', alt, unc['ozone_rel'] * OZONE_FIXED / d))
+    return out
 
 
 def emod_on_grid(entry, grid, srf):

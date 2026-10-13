@@ -850,7 +850,7 @@ def fit_template_windows(wav, spec, ref_wave, ref_flux, windows=None, err=None,
 
 #: Cached convolution matrices: key -> scipy.sparse.csr_matrix (LRU).
 _MATRIX_CACHE = {}
-MATRIX_CACHE_SIZE = 64
+MATRIX_CACHE_SIZE = 16          # a 1538-px matrix is ~25 MB
 
 
 def fwhm_values(fwhm, grid):

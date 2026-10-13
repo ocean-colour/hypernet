@@ -492,6 +492,106 @@ before the shift + stretch fit (shipped as
 
 >A.  Your default is fine
 
+### Build #9b -- 2026-10-12 (Opus 5.5)
+
+1. **The common window pattern stays unexplained.**
+   - **Not SRF shape:** pseudo-Voigt, super-Gaussian and asymmetric SRFs
+     give 0.01-0.04 nm rms patterns, uncorrelated with the real 0.13 nm
+     one.
+   - **Not HSRS line positions:** Kurucz 2005, converted to air, agrees
+     with HSRS to < 0.01 nm in 24 of 27 windows.
+   - **Telluric lines partly:** weak telluric lines missing from bare HSRS
+     produce a pattern of the right size in the twin, correlated r ≈ 0.6
+     with the real one.  But fitting the real VEIT against the HAPI Emod
+     barely helps (χ²ν 29 → 27).
+   - **Left:** absorbers missing from the HITRAN line lists (e.g. the O₂-O₂
+     collision bands at 477, 577 and 630 nm), or something common to every
+     HYPSTAR (stray light, a ghost).
+
+   *Default: keep the empirical pattern subtraction (task 4b).  Carry the
+   origin as an open concern into the exit report.  In Phase 3, check
+   whether the srf residuals concentrate in the high-|pattern| windows
+   (415, 505, 565, 605, 665 nm).  If they do, mask those windows or add the
+   O₂-O₂ bands to Emod.*
+>A. Use your default
+
+2. **A flat-topped SRF costs `srf` its 80 %.**  With the Phase 0 **median**
+   super-Gaussian (p = 2.5/2.3), `srf` keeps 78 % (fitted Gaussian FWHM) or
+   66 % (true FWHM); with the weighted mean (p = 2.2/2.0), 84 %/76 %.  At
+   ΔFWHM 0.2 nm it drops to 66 %/50 %.  The residual hardly correlates with
+   Ed''/Ed (|r| < 0.2), so **G3's trigger would not catch a shape error**.
+   *Default: no change now.  Plan §9 already makes non-Gaussian SRFs "a
+   Phase 2 extension if G3 fails".  Add to the G3 criteria: compare the
+   achieved reduction with this table's super-Gaussian rows, not only the
+   Gaussian prediction.*
+>A. Use your default
+3. **SAO2010.**  The SAO2010 solar reference (Chance & Kurucz 2010) is
+   served over HTTPS with an **expired certificate**, so I did not fetch it.
+   *Default: leave it.  Kurucz 2005 already answers the HSRS question.  Say
+   if you want it fetched with certificate checks disabled.*
+>A. Use your default
+
+### Gate #10 -- 2026-10-12 (Opus 5.5)
+
+The exit report is `claude_prompts/wiggles/phase2_exit.md` (Setup Q11's
+location).  Verdict: **Phase 2 is complete against plan §7 items 1, 2 and 4
+(137 tests, none skipped).**  G1 is applied.  The G0-dependent parts are
+provisional, and five open concerns carry into Phase 3.
+
+**Proposed edits to `docs/wiggles_planning.md`** (each has a default; say
+"defaults" to apply them all)
+
+1. **§4 Phase 2: replace the `hypernet/wavecal/` bullet and its code
+   block** with what was built.  *Default text:*
+   - *"Modules: `hypernet/edinterp.py` (`interpolate_ed_to_l`,
+     `choose_method`, `propagate_ed_to_l`), `hypernet/srf.py` (SRF model and
+     pixel convolution), `hypernet/srfcal.py` (`calibrate_srf`, the HSRS
+     template fit; `fit_wavelength_scale`), `hypernet/emod.py` (Emod builder
+     and cache), `hypernet/srftable.py` and `hypernet/data/srf_table.csv`,
+     and `hypernet/snippets/interpolate_wav_srf.py`."*
+   - *The signature, updated to the L1C's three relative components:
+     `interpolate_ed_to_l(wav_irr, irradiance, wav_rad, *, emod, srf_irr,
+     srf_rad=None, method="srf", u_rel_random=None,
+     u_rel_systematic_indep=None, u_rel_systematic_corr_rad_irr=None)`.*
+>A. Use your default
+2. **§4 Phase 2: the Uncertainty bullet.**  *Default:* "into `u_rel_random`
+   and `u_rel_systematic`" becomes "into the processor's three components
+   (`u_rel_random`, `u_rel_systematic_indep`,
+   `u_rel_systematic_corr_rad_irr`, in %); the new terms (SRF covariances,
+   wavelength scale) go into `systematic_indep`, the Emod inputs
+   linearised.  Note: the processor's water default is `mcsteps = 0`."
+>A. Use your default
+3. **§4 Phase 2: add an outcome paragraph** after the bullets.  *Default:*
+   "**Phase 2 outcome (2026-10-12):**
+   - delivered and tested (137 tests);
+   - `srf` above ΔFWHM 0.15 nm for 120242, 122302 and 122304;
+   - the SRF table is provisional until G0;
+   - the E/Ld wavelength scale is corrected (shift + stretch, to 0.02-0.05 nm
+     per sequence) after removing a 0.13 nm common per-window pattern of
+     unknown origin;
+   - on VEIT, `srf` cuts the Ld/Ed line excess from 2.45× to 1.60× the
+     away level;
+   - under Phase 0's flat-topped SRF shapes, `srf` keeps 66-84 %.
+
+   See `claude_prompts/wiggles/phase2_exit.md`."
+>A. Use your default
+4. **§4 Phase 3, G3.**  *Default: after "...revisited before the tech note
+   is written", add:* "The Ed''/Ed correlation does not reveal an SRF-shape
+   error (Phase 2 task 9b: |r| < 0.2), so the achieved reduction is also
+   compared with the non-Gaussian rows of
+   `hypernet/wiggles/phase2_shape_check.csv`."
+>A. Use your default
+5. **§7 item 2.**  *Default: append* "Delivered as `InterpolationWavSRF` (a
+   `punpy.MeasurementFunction`).  RBINS wires a factory entry, the config
+   value and `system_id`/`date` in one `setup` call; unwired, it is the
+   current linear interpolation."
+>A. Use your default
+6. **§7 item 4.**  *Default:* "into `u_rel_random` and `u_rel_systematic`"
+   becomes "into the processor's three relative components".  Append:
+   "(propagated only when the processor runs with `mcsteps > 0`; the water
+   default is 0)."
+>A. Use your default
+
 ## Logs
 
 ### 2026-10-05 -- Doc refreshed after G1 (Opus 5.5)
@@ -935,3 +1035,296 @@ before the shift + stretch fit (shipped as
 - Not yet tested: whether `calibrate_srf`'s low-blue flag catches real
   low-sun sequences.  Release 2 E comes from L2 (no per-pixel errors, the
   proxy grid), so this waits for the L1A delivery.
+
+### 2026-10-12 -- Build #7: uncertainty with punpy (Opus 5.5)
+
+- JXP accepted the Build #6 default.  122303 ships as `linear`, flagged
+  `method_sensitive`; 122303 and 121231 are to be decided from the L1A E
+  widths.
+- **`edinterp.propagate_ed_to_l(...)`** (Build #2 Q1 route (b): our own MC
+  returning the three L1C components; route (a), the snippet's dataset
+  inputs, comes in task 8 and must agree with this).
+  - **One `punpy.MCPropagation.propagate_standard` run per component:**
+    - `random`: E with `'rand'`;
+    - `systematic_corr_rad_irr`: E with its wavelength err_corr matrix
+      (default `'syst'`);
+    - `systematic_indep`: E with its matrix, plus, drawn jointly, the E and
+      L FWHM-quadratic coefficients (`SRFModel.cov`, as correlation
+      matrices) and the E and L wavelength-scale corrections (shift and
+      stretch, from `cov` or `shift_err`/`stretch_err`).
+  - **The Emod inputs (SZA, water vapour, ozone)** are linearised by finite
+    differences against neighbouring cache entries
+    (`emod.emod_perturbations`) and added in quadrature to
+    `systematic_indep`.  They are reported as `u_rel_emod` and
+    `u_rel_emod_<name>`.  Rebuilding Emod per draw would take ~3.5 s.  A
+    pure F0 scale cancels in the model methods (tested).
+  - **Nominal Ed:** `interpolate_ed_to_l` on the scale-corrected E and L
+    grids (output on the reported L grid).
+  - **Seeding:** `seed` seeds numpy's global RNG, which punpy/comet_maths
+    use, and the previous state is restored.
+  - **Inputs:** 2-D irradiance runs per scan (seed + k).  `return_corr`
+    gives each component's L-grid error-correlation matrix.  For
+    `systematic_indep` that is the MC part only; the Emod part is
+    linearised.
+  - **MC draws use plain callables** for the drawn FWHM, so they bypass
+    the matrix cache.  `srf.MATRIX_CACHE_SIZE` drops from 64 to 16: a
+    1538-pixel matrix is ~25 MB.
+- **`emod.emod_perturbations(entry, unc=None, ...)`**:
+  - default 1σ inputs (`EMOD_UNC`): SZA 2.5/√3° (the 5° binning), PWV a
+    factor 1.5 (σ ln PWV = ln 1.5), ozone 10 %;
+  - each term is a one-sided step to the next grid entry (SZA ± 5°, the
+    next PWV column, +30 DU for ozone), scaled to 1σ;
+  - `_model_entry` was factored out of `emod_for`.
+- **Speed** (synthetic 640 → 615 px, 100 draws per run): `linear` 0.4 s,
+  `srf` 1.3 s.  A 1538-px VEIT spectrum will be a few seconds.
+- **Tests** (`test_edinterp.py` +6, `test_emod.py` +1):
+  - **Seeding:** reproducible with a seed, different seeds differ, and the
+    global RNG state is restored.
+  - **Linear vs analytic:** `linear` with no SRF/Emod/scale uncertainty
+    matches the analytic first-order propagation of the input components
+    (3000 draws: median ratio within 3 %, every pixel within 12 %).
+  - **Common scale error:** a fully correlated 2 % scale error stays 2 %
+    (one common factor per draw, so identical at every pixel), in
+    `systematic_indep` only, with error correlation > 0.999, for `linear`
+    and `srf`.  A random input decorrelates (|corr| < 0.4 beyond 3 px).
+  - **SRF terms:** the SRF/scale terms vanish for a flat model and are
+    non-zero with lines.
+  - **Emod terms:** a perturbation reproduces factor × ΔEd/Ed exactly; an
+    F0 scale gives 0.
+  - **2-D:** columns equal the 1-D runs.
+  - **`emod_perturbations`:** the factors and grid edges are right.
+- `pytest -q`: **132 passed**.  The two warnings are comet_maths dividing
+  by zero-variance pixels when it forms a correlation matrix (upstream,
+  harmless here).
+- Not done here: magnitudes on real data.  Task 9 (VEIT check) draws the
+  `u_rel_*` bands with the VEIT SRF covariances and the task 6 scale
+  errors.
+
+### 2026-10-12 -- Build #8: the drop-in snippet (Opus 5.5)
+
+- **`hypernet/snippets/interpolate_wav_srf.py`** (Setup Q3; `snippets/` is
+  not imported by `hypernet/__init__`).
+  - **`InterpolationWavSRF(punpy.MeasurementFunction)`.**
+    - It subclasses the processor's real base class.  punpy is installed,
+      so no stand-in was needed, unlike what Setup Q3 assumed.
+    - Same `meas_function(rad_wavs, irr_wavs, irr)` and argument names
+      (`radiance_wavelength`, `wavelength`, `irradiance`), the same 2-D
+      wavelength handling, and `get_name() = "InterpolationWavSRF"`.
+  - **`setup(szas, network, irr_wavs, system_id=None, date=None, *,
+    method, srf_irr, srf_rad, scale_irr, scale_rad, emod, pwv_mm, table)`**:
+    - it takes the SRFs, the G1 method and the period wavelength-scale
+      corrections from the SRF table (`srftable.srf_for/method_for/scale_for`),
+      and Emod from `emod_for(mean SZA, pwv)`;
+    - the keywords override those (e.g. a per-sequence scale fit, Q8);
+    - **without `system_id`/`date`** (the processor's current 3-argument
+      call) it warns and falls back to linear interpolation, so an unwired
+      install behaves as today.
+  - **`meas_function`** applies the E/L scale corrections to the grids and
+    calls `interpolate_ed_to_l`.  Pixels outside the E grid are
+    **extrapolated** with `interp1d(..., fill_value="extrapolate")`, as in
+    the processor's linear class.
+  - **Route (a)** (Build #2 Q1): `srf_inputs=True` adds the inputs
+    `srf_coeffs_irradiance`, `srf_coeffs_radiance`, `wavescale_irradiance`
+    and `wavescale_radiance`.  `add_srf_variables(ds_irr, mf)` puts them
+    in the irradiance dataset as obsarray variables:
+    - `u_rel_systematic_indep_<name>`, **absolute** (units nm; the shift
+      can be 0, so it cannot be a %);
+    - an `err_corr_matrix` correlation from the covariances.
+
+    The processor's existing `propagate_ds_specific` call then propagates
+    them once `mcsteps > 0`.
+  - The module docstring lists what RBINS must wire: the factory entry, the
+    config value, `system_id`/`date` in the `setup` call in
+    `interpolate.py`, optionally the dataset variables, and shipping
+    `hypernet`.
+- **A trap found and avoided.**  punpy finds an input's uncertainty by
+  substring (`"_<component>_<var>"` in a variable name starting with
+  `u`).  My first name, `wavelength_scale_irradiance`, made
+  `u_rel_systematic_indep_wavelength_scale_irradiance` match the
+  processor's `wavelength` input, and the run failed with mismatched
+  shapes.  It is renamed `wavescale_*`, with a comment by
+  `SRF_INPUT_NAMES`.
+- **Tests** (`hypernet/tests/test_snippets.py`, 5):
+  - **Interface:** the names and arguments (with and without
+    `srf_inputs`).
+  - **Unwired fallback:** the 3-argument `setup` gives **exactly** the
+    processor's `InterpolationWavLinear` output, including extrapolation
+    beyond the E grid and 2-D wavelength arrays.
+  - **`srf`:** `meas_function` equals `interpolate_ed_to_l` inside the E
+    grid; explicit nominal inputs give the same answer.
+  - **Route (a) vs (b):** processor-shaped obsarray datasets (2 scans,
+    random 0.5 % and systematic 1 %, SRF covariances, scale errors of
+    0.01 nm) propagated with `propagate_ds_specific`, as `interpolate.py`
+    does, match `edinterp.propagate_ed_to_l`.
+    - Ed agrees to 1e-10.
+    - The components agree to within MC noise (median ratio within 6 %,
+      300 draws each).
+    - The **SRF + scale terms alone** (input systematic 0) agree to within
+      10 %.
+    - Without the extra inputs, nothing propagates.
+  - **Phase 1 scene (tier 2, ran):** the VEIT-like twin scene on the real
+    122304 grids, SRFs from the table (the L1A VEIT rows, `srf`), scale set
+    to 0 as the twin has none.  Ed_L from the snippet matches the truth to
+    < 1e-6 rms relative, and to < 1 % of linear's error.
+- `pytest -q`: **137 passed**.  The 11 warnings come from xarray/punpy (a
+  duplicate dimension name in punpy's own output correlation matrices) and
+  obsarray FutureWarnings.
+
+### 2026-10-12 -- Build #9: VEIT consistency check (Opus 5.5)
+
+- New `hypernet/wiggles/phase2_veit_check.py` (~20 s).  Writes
+  `hypernet/wiggles/phase2_veit_check.csv` and
+  `hypernet/wiggles/figs/phase2/veit_three_methods.png`.
+- **L1C reproduction (400-900 nm).**  The L1A E series means, interpolated
+  in time to the mean water-view time, then `linear` onto the L grid:
+  **median relative difference 1.3e-5, maximum 4.2e-5** (at 898 nm)
+  against the L1C `irradiance`.
+  - This is identical to Phase 0's `whn_l1a.check_against_l1c`.
+  - Plan §2.3's 2 × 10⁻⁵ is a median, so it holds.
+  - The snippet unwired (the processor's 3-argument `setup`, linear
+    extrapolating) gives the same numbers.
+- **Three methods.**
+  - `linear` as the processor runs it.
+  - `ruddick2023` and `srf` with the VEIT template SRFs (ΔFWHM 0.48 nm), Emod
+    `emod_for(36.7)` (the 35° bin), and the per-sequence wavelength-scale
+    corrections.  E: shift −0.029, stretch +0.008 nm (max_err 0.021); Ld:
+    −0.040, +0.060 (0.027).  Both pass Q8.
+  - The model methods fall back to linear on ~290 L pixels: the L grid runs
+    350-1100 nm, but Emod covers 380-1000 nm, so the pixels below ~385 nm
+    and above ~995 nm fall back.  The cached HITRAN lines stop at
+    `NU_RANGE` = 10000 cm⁻¹ = 1000 nm.  Extending Emod to the full grid
+    needs a new HITRAN fetch (open).
+- **Line residual of Ld / Ed_L** (Ld at the water-view time, over its
+  10 nm running median; rms):
+
+  | | near the ten lines | away | ratio | Ca K | Ca H | G band | O₂-A | H₂O |
+  |---|---|---|---|---|---|---|---|---|
+  | linear | 0.0079 | 0.0032 | 2.45 | 0.034 | 0.031 | 0.014 | 0.013 | 0.023 |
+  | ruddick2023 | 0.0107 | 0.0034 | 3.13 | 0.036 | 0.032 | 0.016 | 0.021 | 0.026 |
+  | srf | **0.0051** | 0.0032 | **1.60** | **0.009** | **0.008** | **0.009** | **0.008** | 0.033 |
+
+  - On real data, as the twin predicted:
+    - **`srf` removes most of the line structure** (Ca H/K by a factor of
+      ~4, the line-region excess from 2.45× to 1.60× the away level);
+    - **`ruddick2023` makes it worse.**
+  - **H₂O (936 nm) gets worse with `srf`.**  Emod's water vapour (15 mm,
+    unfitted) is probably wrong for this day.  A per-sequence PWV fit, or
+    masking the H₂O band, is a Phase 3 item.
+  - The remaining line/away of 1.60 includes Ring filling-in in Ld (Phase 0
+    8d), which no E method removes.  The figure's Hα and Na D panels show
+    structure left in `srf` as well.
+- **Uncertainties** (`propagate_ed_to_l`, 200 draws).  The L1C `u_rel_*`
+  are all 0 (`mcsteps = 0`), and the calibration uncertainties aren't in the
+  files.  So: random = E's scan scatter (median **0.13 %**);
+  systematic_indep = only the new terms.
+  - **`srf`:** median **0.036 %**, 0.080 % near the lines, max 3.4 % (in
+    O₂-A, where Emod and the wavelength scale matter most).  Of this, the
+    Emod part has median 0.0009 %, max 0.18 %.
+  - **`ruddick2023`:** median 0.018 %, max 1.3 %.
+  - So the new terms are well below the measurement noise except inside
+    the deep gas bands.
+- **Figure:**
+  - top: Ld/Ed_L, 385-900 nm, three methods;
+  - middle: Ca H/K, Hα and Na D zooms with ±1σ bands of Ed_L;
+  - bottom: `srf`'s u_rel components on a log scale.
+- `pytest -q`: 137 passed (no new tests; this is a check script).
+
+### 2026-10-12 -- Build #9b: non-Gaussian SRFs, the window pattern, L shifts (Opus 5.5)
+
+- **`hypernet/wiggles/phase2_shape_check.py`** (25 scenes, 24 s).  Outputs:
+  - `$OS_COLOR/.../phase2/shape_check.parquet`;
+  - `hypernet/wiggles/phase2_shape_check.csv` and `phase2_shape_pattern.csv`;
+  - `figs/phase2/shape_check.png`.
+
+  The run:
+  - **Part A:** twin case (iii), 122304 FWHMs.  Truth and every
+    observation go through a non-Gaussian SRF (`observe_shape`: chunked
+    kernels with per-pixel width; `asym` is a split Gaussian with σ(1 ± a)
+    and the FWHM kept).
+  - **The correction stays Gaussian**, with either the true FWHM or the
+    `fitted` FWHM (`calibrate_srf` on the noise-free E and Ld: the
+    realistic pipeline).
+  - **Cases:** the Gaussian control; Phase 0's pseudo-Voigt (η 0.06) and
+    super-Gaussians (weighted mean p 2.23/2.00; median 2.54/2.27);
+    asymmetric a = 0.05 and 0.10; **L really sampling +0.05/+0.10 nm**
+    (Setup Q8); and ΔFWHM 0.2/0.8 for three shapes.
+- **Part A results** (srf reduction vs linear, median over 25 scenes;
+  `ruddick2023` −4 to −13 % everywhere):
+
+  | case | true FWHM | fitted FWHM |
+  |---|---|---|
+  | Gaussian | 100 % | 100 % |
+  | pseudo-Voigt 0.06 | 97 % | 98 % |
+  | super-Gaussian, weighted mean | 76 % | 84 % |
+  | super-Gaussian, median | 66 % | 78 % |
+  | asymmetric 0.05 / 0.10 | 90 / 80 % | 90 / 80 % |
+  | L shift +0.05 / +0.10 nm | 88 / 77 % | -- |
+  | super-Gaussian median, ΔFWHM 0.2 / 0.8 | 50 / 74 % | 66 / 83 % |
+
+  - The **fitted** Gaussian does better than the true FWHM for the
+    super-Gaussians: the template fit absorbs the shape into an effective
+    width (E −0.10 to −0.21 nm, L −0.13 nm, matching Phase 0's
+    `supergauss_dfwhm`).
+  - **An L wavelength error hurts less than an E one** (0.05 nm: 88 % vs
+    80 %; 0.1 nm: 77 % vs 62 %).
+  - **The srf residual hardly correlates with Ed''/Ed** (|r| ≤ 0.18 for
+    every case), so G3's trigger would not reveal a shape error (Q&A
+    "Build #9b" Q2).
+- **Part B, the window pattern's origin** (Build #4b Q1).
+  - On the VEIT-like scene, the wavelength-scale fit (SRF width free, as
+    Phase 0c) on E and Ld observed through each shape, against the scene's
+    own spectra.
+  - **Every shape gives only 0.01-0.04 nm rms, uncorrelated with the real
+    pattern** (r −0.37 to +0.21).
+  - An asymmetric SRF mostly *shifts* all windows together (−0.05 to
+    −0.12 nm), and the fitted shift absorbs that.
+  - **So the pattern is not SRF shape.**
+- **`hypernet/wiggles/phase2_reference_check.py`** (writes
+  `hypernet/wiggles/phase2_reference_check.csv`):
+  - **Kurucz (2005) `irradthu.dat`**, fetched over HTTP from
+    kurucz.harvard.edu to `$OS_COLOR/hypernet/ref/kurucz2005_irradthu.dat`
+    (19.5 MB; SHA-256
+    `6013b1398718ed9488cdcbfd44ef93e8adcd7fd536a329d35252f5fdf7f330d0`).
+    - **Its wavelengths are vacuum** (as given: shift −0.175 nm against
+      HSRS in air; after `vac_to_air`, 0.000).
+    - Through a Gaussian on the 122304 E grid and fitted against HSRS, it
+      agrees to < 0.01 nm in 24 of 27 windows.  Only 605 (−0.10), 665
+      (+0.19) and 675 nm (+0.77) differ.  Correlation with the real
+      pattern −0.12.
+    - **So HSRS line positions are not the source** (unless HSRS and
+      Kurucz share an upstream origin).
+  - **Telluric lines in the "clean" windows:** the twin Ed (HSRS × HAPI/O₃
+    T) fitted against bare HSRS gives a pattern of 0.04 nm rms (SZA 40,
+    15 mm), 0.08 (30 mm) and 0.16 (SZA 70, 30 mm), **correlated 0.57-0.67
+    with the real one**.  It matches the real pattern at 505, 545, 585-605
+    and 665 nm, but not at 415, 435-475 or 855-865.
+  - **But on real VEIT**, fitting against the Emod (with telluric lines)
+    instead of bare HSRS changes little.  E: χ²ν 29.0 → 27.2-28.0, window
+    rms 0.118 → 0.102-0.115 nm.  Ld: 29.8 → 25.1-28.4.
+  - So the modelled tellurics are not enough.  **The origin stays open**
+    (Q&A "Build #9b" Q1).
+- The SAO2010 reference was not fetched: its HTTPS certificate has expired
+  (Q&A Q3).
+- `pytest -q`: 137 passed (no new tests; these are analysis scripts).
+
+### 2026-10-12 -- Gate #10: Phase 2 exit check (Opus 5.5)
+
+- JXP accepted all three Build #9b defaults:
+  - keep the empirical window-pattern subtraction and check the residuals
+    in Phase 3;
+  - non-Gaussian SRFs stay a G3-failure extension, judged also against the
+    9b rows;
+  - SAO2010 not fetched.
+- Wrote `claude_prompts/wiggles/phase2_exit.md` (the Setup Q11 location;
+  not under `docs/`).
+  - **Verdict: complete against §7 items 1, 2 and 4.**
+  - It has the deliverables table (module and tests per item), the
+    special-case confirmation, what the snippet ships with, the carried
+    results, what is provisional while G0 is open, and five open concerns.
+- **Test inventory:** 137 tests, none skipped with `$OS_COLOR` mounted.
+  - `test_edinterp` 23, `test_srf` 25, `test_srfcal` 12, `test_emod` 11,
+    `test_srftable` 6, `test_snippets` 5, `test_osoaa` 6, `test_twin` 11.
+  - The rest are Phase 0 and earlier.
+  - The machine-precision special cases were rerun and pass.
+- Proposed six edits to plan §4 (Phase 2, G3) and §7 in Q&A "Gate #10".
+  **Not applied** pending JXP's approval.

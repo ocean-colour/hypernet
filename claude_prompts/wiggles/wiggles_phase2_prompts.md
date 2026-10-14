@@ -1328,3 +1328,23 @@ provisional, and five open concerns carry into Phase 3.
   - The machine-precision special cases were rerun and pass.
 - Proposed six edits to plan §4 (Phase 2, G3) and §7 in Q&A "Gate #10".
   **Not applied** pending JXP's approval.
+
+### 2026-10-13 -- Gate #10 answers applied (Opus 5.5)
+
+- JXP accepted all six Gate #10 defaults; all are applied to
+  `docs/wiggles_planning.md`:
+  - (1) §4 Phase 2: the `hypernet/wavecal/` bullet is replaced by the
+    modules built, and the signature now takes the three L1C components;
+  - (2) the Uncertainty bullet: the three components, where the new terms
+    go, and the `mcsteps = 0` note;
+  - (3) a **Phase 2 outcome** paragraph;
+  - (4) G3: also compare with the non-Gaussian rows of
+    `phase2_shape_check.csv`;
+  - (5) §7 item 2: `InterpolationWavSRF` and what RBINS wires;
+  - (6) §7 item 4: the three components and the `mcsteps` note.
+- The Sphinx build (`sphinx-build -b html docs`, to scratch) reports no
+  errors for the page.  One warning, not from these edits: the page is
+  "not included in any toctree".  It was already outside the toctree, so it
+  is built and served but not linked from the guide's navigation.
+- **Phase 2 is closed.**  Phase 3 (the in-situ test) and Phase 0 tasks 9-14
+  (G0) wait on Kevin's L1A delivery.

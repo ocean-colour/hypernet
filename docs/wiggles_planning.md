@@ -285,29 +285,43 @@ instruments the correction gains nothing and is fragile. See
 - **E wavelength scale (G1):** fit a shift and linear stretch of E against the
   HSRS-based Emod (per sequence or per calibration period) to ≤ 0.05 nm, and
   carry its uncertainty.
-- `hypernet/wavecal/` (module name to be settled): the SRF model, the
-  Fraunhofer-line self-calibration (centroids and FWHM(λ) from a spectrum and
-  a line list), the Emod builder (HSRS × HAPI × O₃ for a given SZA and
-  pressure), and the interpolation function, roughly
+- Modules: `hypernet/edinterp.py` (`interpolate_ed_to_l`, `choose_method`,
+  `propagate_ed_to_l`), `hypernet/srf.py` (SRF model and pixel convolution),
+  `hypernet/srfcal.py` (`calibrate_srf`, the HSRS template fit;
+  `fit_wavelength_scale`), `hypernet/emod.py` (Emod builder and cache),
+  `hypernet/srftable.py` and `hypernet/data/srf_table.csv`, and
+  `hypernet/snippets/interpolate_wav_srf.py`. The interpolation function:
 
   ```python
   def interpolate_ed_to_l(wav_irr, irradiance, wav_rad, *, emod,
                           srf_irr, srf_rad=None, method="srf",
-                          u_rel_random=None, u_rel_systematic=None):
-      """Return Ed on the L grid, with u_rel_random / u_rel_systematic."""
+                          u_rel_random=None, u_rel_systematic_indep=None,
+                          u_rel_systematic_corr_rad_irr=None):
+      """Return Ed on the L grid, with the three relative components."""
   ```
 
 - **Uncertainty:** `punpy` Monte-Carlo propagation of the SRF parameters
   (centroid and FWHM, with their fit covariances), the Emod inputs (F₀,
-  column amounts, SZA) and the wavelength grids into `u_rel_random` and
-  `u_rel_systematic` on the output, in the `obsarray` conventions the
-  processor uses.
+  column amounts, SZA) and the wavelength grids into the processor's three
+  components (`u_rel_random`, `u_rel_systematic_indep`,
+  `u_rel_systematic_corr_rad_irr`, in %), in the `obsarray` conventions the
+  processor uses; the new terms (SRF covariances, wavelength scale) go into
+  `systematic_indep`, the Emod inputs linearised. Note: the processor's water
+  default is `mcsteps = 0`.
 - **Drop-in snippet:** a measurement-function class in the style of
   `hypernets_processor/interpolation/measurement_functions/interpolate_wav_linear.py`
   (same `function` / argument-name interface), with the SRF table and Emod
   cache as inputs. We will not run `hypernets_processor` end to end.
 - Tests under `hypernet/tests/`: the two special cases must reproduce
   `np.interp` and eq. (14) to machine precision on synthetic data.
+
+**Phase 2 outcome (2026-10-12):** delivered and tested (137 tests). `srf`
+above ΔFWHM 0.15 nm for 120242, 122302 and 122304; the SRF table is
+provisional until G0. The E/Ld wavelength scale is corrected (shift + stretch,
+to 0.02–0.05 nm per sequence) after removing a 0.13 nm common per-window
+pattern of unknown origin. On VEIT, `srf` cuts the Ld/Ed line excess from
+2.45× to 1.60× the away level; under Phase 0's flat-topped SRF shapes it keeps
+66–84 %. See `claude_prompts/wiggles/phase2_exit.md`.
 
 ### Phase 3 — In-situ test
 
@@ -330,7 +344,10 @@ predicts for the measured SRF difference (the noise row of
 ≈ 0 below 0.1 nm), on most sequences and instruments,
 without a detectable change in the control regions. If the residual after
 correction still correlates with Ed''/Ed, the SRF model (Gaussian, quadratic
-FWHM) is revisited before the tech note is written.
+FWHM) is revisited before the tech note is written. The Ed''/Ed correlation
+does not reveal an SRF-shape error (Phase 2 task 9b: |r| < 0.2), so the
+achieved reduction is also compared with the non-Gaussian rows of
+`hypernet/wiggles/phase2_shape_check.csv`.
 
 ## 5. Data request
 
@@ -418,15 +435,19 @@ than by that attribute, and would welcome confirmation of the RAD file names.
 2. **A drop-in snippet** for `hypernets_processor` in the
    `interpolate_wav_linear.py` style, with a per-instrument SRF table (a new
    calibration product: per-channel FWHM(λ) and centroid offset) and a cached
-   Emod per SZA bin.
+   Emod per SZA bin. Delivered as `InterpolationWavSRF` (a
+   `punpy.MeasurementFunction`); RBINS wires a factory entry, the config value
+   and `system_id`/`date` in one `setup` call; unwired, it is the current
+   linear interpolation.
 3. **A technical note** (this page, grown): the diagnosis over ~150 sequences,
    the twin-experiment results, the in-situ before/after, and the uncertainty
    budget. Authorship and any later paper to be agreed with Kevin.
 4. **Uncertainty:** FIDUCEO-style, following De Vis et al. (2024). The new
    step propagates, with `punpy`, the SRF-parameter covariances, the Emod
-   inputs and the grid uncertainties into `u_rel_random` and
-   `u_rel_systematic` on Ed_L, so the downstream ρw uncertainties in the
-   processor pick it up without change. `punpy` 1.1.0, `comet_maths` 1.0.10
+   inputs and the grid uncertainties into the processor's three relative
+   components on Ed_L, so the downstream ρw uncertainties in the processor
+   pick it up without change (propagated only when the processor runs with
+   `mcsteps > 0`; the water default is 0). `punpy` 1.1.0, `comet_maths` 1.0.10
    and `obsarray` 1.0.3 are installed and listed in `requirements.txt`.
 
 ## 8. Timeline (weeks from agreement on this plan)

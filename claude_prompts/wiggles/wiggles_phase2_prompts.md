@@ -277,6 +277,17 @@ preliminary findings are in Context.
     `docs/wiggles_planning.md` §4 and §7 in Q&A and apply them only if JXP
     approves.  Log your work.
 
+### Report
+
+11. **Report.**  Write a report named `reports/wiggles_interim_report.md` describing:
+    - the goals of our analysis
+    - the work to date
+    - what comes next
+    - what I need from the HYPERNETS team to continue
+
+Include figures and tables.
+Log your work.
+
 ## Q&A
 
 ### Setup #1 -- 2026-10-07 (Opus 5.5)
@@ -1348,3 +1359,38 @@ provisional, and five open concerns carry into Phase 3.
   is built and served but not linked from the guide's navigation.
 - **Phase 2 is closed.**  Phase 3 (the in-situ test) and Phase 0 tasks 9-14
   (G0) wait on Kevin's L1A delivery.
+
+### 2026-10-15 -- Report #11: interim report (Opus 5.5)
+
+- No new JXP answers since Gate #10.  Wrote
+  **`reports/wiggles_interim_report.md`** (a new `reports/` folder at the
+  repo root, outside `docs/`, so not published), for the HYPERNETS team, in
+  JXP's voice.
+- **Sections:**
+  - 1, summary;
+  - 2, goals (H1/H2 and the four phases);
+  - 3, work to date: Phase 0 on VEIT and the Release 2 archive, the Phase 1
+    twin, Phase 2 code and the VEIT check, robustness, and the two
+    unexplained findings;
+  - 4, what comes next (a table);
+  - 5, what we need from the HYPERNETS team (seven items).
+- **Seven figures**, linked by relative path from `reports/` to the
+  committed PNGs (all checked to exist): `veit_template_fwhm`,
+  `phase0c_fwhm_by_instrument`, `phase0e_wiggles`, `twin_rho2_lines`,
+  `twin_prediction`, `veit_three_methods` and `shape_check`.
+- **Two tables:** Table 1, instrument classes with ΔFWHM and the shipped
+  method; Table 2, the twin results.
+- **The asks:**
+  1. the L1A delivery and the calibration files (with the RAD file-name
+     question);
+  2. laboratory slit-function and wavelength-calibration data;
+  3. what differs in hardware for the narrow-E units;
+  4. stray-light characterisation;
+  5. the processor: the Release 2 code version, `mcsteps = 0`, the
+     `InterpolationWavClearSky` issue, and integrating
+     `InterpolationWavSRF`;
+  6. per-sequence water vapour;
+  7. confirmation of the air wavelength scale.
+- Every number was checked against the Logs.  One fix while drafting: the
+  summary's "E ≈ L within 0.07 nm" (at 450 nm) now notes 122303 as
+  borderline (0.14 nm over 400-680 nm), consistent with Table 1.

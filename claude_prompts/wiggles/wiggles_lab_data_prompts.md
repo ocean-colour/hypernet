@@ -643,6 +643,92 @@ default; it stands unless you say otherwise.
       matrix.
 >A. Use your default
 
+### Gate #6 -- 2026-10-18 (Opus 5.5): proposed §4 edits
+
+From the provisional G0 (`claude_prompts/wiggles/gate_G0.md`).  None is
+applied: `docs/wiggles_planning.md` is unchanged until you approve.  Each
+edit quotes the current text of §4 and gives the replacement; answer per
+edit (yes / no / changed text).
+
+1. **G0(a): make it per instrument.**  As written, 4 of 7 instruments are
+   E ≈ L ("most"), so the criterion would drop H2, which is required on the
+   other three.
+
+   *Current:*
+   > (a) If FWHM_E(λ) = FWHM_L(λ) within the fit uncertainty on most
+   > instruments, H2 is dropped and eq. (14) suffices.
+
+   *Proposed:*
+   > (a) Per instrument: where ΔFWHM = FWHM_L − FWHM_E (median over 400–680
+   > nm, Gaussian-equivalent widths) is below 0.15 nm (gate G1), H2 is not
+   > needed and the processor's linear interpolation is kept; where it is
+   > above, the `srf` method applies.  Lab line-spread data, where they
+   > exist, cross-check the class; a disagreement is resolved from the L1A
+   > E, not silently.
+>A. Ok use your Proposed
+
+2. **G0(b): add the lab epochs, and bound the recalibration jump.**  The
+   cal files may never "explain" a jump.  Every observed jump is
+   ≤ 0.03 nm.
+
+   *Current:*
+   > (b) If the SRFs are stable per instrument (spread across SZA, sky and
+   > season below ~0.2 nm, and no jump at recalibration that the cal files do
+   > not explain), Phase 2 ships a per-instrument SRF table.
+
+   *Proposed:*
+   > (b) If the SRFs are stable per instrument (spread across SZA, sky and
+   > season below ~0.2 nm; any jump at recalibration below ~0.1 nm or
+   > explained by the cal files; lab calibration epochs, where available,
+   > agreeing to ~0.2 nm), Phase 2 ships a per-instrument SRF table.
+
+   The rest of (b) is unchanged.
+>A. Ok use your Proposed
+
+3. **G0(c): the dispersion, not only the centroid.**  The offsets are
+   ≤ 0.10 nm, but shift + stretch reaches 0.1-0.24 nm at the ends of
+   390-870 nm.  The processor grid is now known from the lab polynomials.
+
+   *Current:*
+   > (c) If centroid offsets exceed ~0.1 nm systematically on some
+   > instrument, a wavelength recalibration goes into the function before
+   > anything else.
+
+   *Proposed:*
+   > (c) If centroid offsets, or the wavelength-scale shift and stretch,
+   > exceed ~0.1 nm systematically anywhere in 390–870 nm on some
+   > instrument, a wavelength correction (per-sequence shift + stretch
+   > against the model irradiance, with a calibration-period fallback) goes
+   > into the function before anything else.  The processor's grids are the
+   > lab wavelength polynomials (`hypernet.labcal.grid_for`); the correction
+   > is relative to them.
+>A. Ok use your Proposed
+
+4. **Phase 0: the SRF shape.**  The lab shows flat-topped E SRFs on the
+   narrow-E units.
+
+   *Current* (first bullet of Phase 0):
+   > Parameterise each channel's SRF as a Gaussian whose FWHM is a quadratic
+   > in λ, fitted to ~10 clean solar/telluric lines per spectrum
+
+   *Proposed:*
+   > Parameterise each channel's SRF as a Gaussian whose FWHM is a quadratic
+   > in λ (with a super-Gaussian shape where laboratory line-spread data
+   > show one, its exponent from the lab and checked against the field),
+   > fitted to ~10 clean solar/telluric lines per spectrum
+
+   The rest of the bullet is unchanged.
+>A. Ok use your Proposed
+
+5. **A status line under *Gate G0*.**
+
+   *Proposed* (new last sentence of the Gate G0 paragraph):
+   > A provisional evaluation from Release 2 L2 and the laboratory data
+   > (`claude_prompts/wiggles/gate_G0.md`, 2026-10-18) passes (a) per
+   > instrument and (b), and triggers (c), handled by the wavelength-scale
+   > correction; the final G0 waits for the L1A.
+>A. Ok use your Proposed
+
 ## Logs
 
 ### 2026-10-18 -- Doc created
@@ -1401,3 +1487,71 @@ super-Gaussian ones.
   power") holds only against a truth.
 - For Phase 3, the inversion route is as good as its grid, and the grid
   cannot be checked from L2.  This adds weight to waiting for the L1A.
+
+### 2026-10-18 -- Gate #6 (Opus 5.5)
+
+Task 6, the provisional gate G0.  No package code changed, and task 7 was
+not started.
+
+- **Read:**
+  - `docs/wiggles_planning.md` §4 (Phase 0, Gate G0) and §9 in full;
+  - `gate_G1.md` and `phase2_exit.md` for the structure;
+  - the Phase 0 Logs 8c-8f;
+  - Builds #2-#5 here;
+  - the committed tables.
+- **Wrote `claude_prompts/wiggles/gate_G0.md`** (not under `docs/`), headed
+  "provisional: Release 2 L2 + lab data, no L1A".
+- **New `hypernet/wiggles/lab_g0_numbers.py`** prints the numbers not
+  already in the Logs:
+  - the field FWHM std per group;
+  - the SZA and sky-index slopes turned into changes over each group's
+    range;
+  - the recalibration and site pairs;
+  - the lab epoch-to-epoch ranges;
+  - the offsets and scale fits.
+
+  It writes nothing.
+- **Verdict: provisional pass, with conditions.**
+  - **G0(a): pass per instrument.**  H2 is needed on 120242, 122302 and
+    122304 (field 0.35-0.49, lab 0.39-0.47 nm) and not on the other four
+    (lab −0.06 to +0.02; 122303 set from the lab).  The criterion's "most
+    instruments" wording would drop H2: edit 1.
+  - **G0(b): pass.**
+    - Field max std 0.021-0.059 nm; SZA ≤ 0.08 nm; sky ≤ 0.09 nm, on Ld
+      only (Ring-like, 2-4σ).
+    - Recalibration ≤ 0.03 nm (122304 E +0.025-0.029, 5-7σ); site
+      ≤ 0.012 nm.
+    - Lab epochs: FWHM ≤ 0.12 nm, polynomial ≤ 0.10 nm (120242, mostly the
+      line-set change).
+  - **G0(c): triggered, and handled.**
+    - Offsets ≤ 0.10 nm (122304 Ld, 0.09-0.10).
+    - The Ld dispersion trend is 0.12-0.24 nm across 390-870 nm, plus the
+      ±0.09 nm lab-polynomial residual.
+    - Phase 2's shift + stretch correction is the §4 wavelength correction.
+- **Settings:** `TABLE_IS_DEFAULT = True` and
+  `APPLY_CENTROID_OFFSET = False` are supported by the evidence, and were
+  not changed.
+- **Open issues listed:**
+  1. the lab E shape costs O₂-A on VEIT;
+  2. the G1 threshold on Gaussian-equivalent widths;
+  3. 122303 data vs lab;
+  4. 80 % of the window pattern unexplained;
+  5. the withdrawn L2 bias, still in `delta_fwhm_l1a_est`;
+  6. the E epoch is untestable from L2 on six instruments;
+  7. the items carried from Phase 2.
+
+  The L1A checklist has eight items.
+- **Q&A "Gate #6"**: five proposed §4 edits, each quoting the current
+  text:
+  1. G0(a) per instrument;
+  2. G0(b) with lab epochs and a ~0.1 nm jump bound;
+  3. G0(c) including the dispersion and the lab grids;
+  4. the Phase 0 SRF shape;
+  5. a G0 status line.
+
+  `docs/wiggles_planning.md` was not edited.
+- **Learned:**
+  - The plan's G0 was written as one global switch.  The data make it
+    per-instrument at every step: class, shape and epoch.
+  - The only criterion that triggers is (c), through the dispersion, which
+    Phase 2 already corrects.

@@ -55,6 +55,12 @@ Attempt to improve the wiggles in the WATERHYPERNET dataset
   locally to `$OS_COLOR/WATERHYPERNET/Wavelengths/`: his idea doc
   `XVwiggles_idea_2026-09-21.docx` and one VEIT sequence (L1A_IRR, L1A_RAD,
   L1C_ALL, L2A_REF netCDF + PNGs).
+- **Lab wavelength-calibration data** (from Joel, 2026-10-17):
+  `$OS_COLOR/hypernet/wiggles/wiggles_lab_data.zip`, unzipped to
+  `.../wiggles/lab_data/hypstar_<sn>/calibration/wavelength/<YYYY_MM>/`
+  (`fwhm_vnir.dat`, `deltawl_vnir.dat`, `*_wl_coefs_*.dat`, `lamp_vnir.dat`;
+  7 instruments, 13 epochs, VNIR only).  Read by `wavecal/lab_data_examine.py`
+  (outputs in `.../lab_data/derived/`).
 - Radiative transfer: JXP's OSOAA fork, cloned at
   `/Users/xavier/Oceanography/python/RadiativeTransferCode-OSOAA`
   (`https://github.com/profxj/RadiativeTransferCode-OSOAA`).
@@ -91,6 +97,11 @@ I’m not sure what you want for the “sky” in the csv, but I recommend to us
 
 I have added the Ruddick et al, 2006 paper to the `context/papers` directory.  Please read it and see if you agree with Kevin's suggestion.
 If so, modify the prompt docs accordingly.  
+Use Fable if you can.  Log your work.
+
+### New data
+
+1. Joel shared a zip file with new data.  It is the "wiggles_lab_data.zip" in `$OS_COLOR/hypernet/wiggles`.  Please examine it and discuss with me whether you can proceed with the undone phases of the plan.
 Use Fable if you can.  Log your work.
 
 ## Q&A
@@ -491,6 +502,155 @@ We would also ask for:
    spares?
 >A. Yes, draft a short reply.  Then hold tight.
 
+### New data #1 -- 2026-10-17 (drafted with Fable): Joel's lab data
+
+**What the zip is.**  It holds no field data.  For each of our seven
+instruments it has the **lab wavelength calibration** from 1 to 4 epochs,
+13 epochs in all.  Each epoch has the same four files:
+- per-line FWHM of the L and E channels at Hg/Ar/Xe (+Kr) lamp lines;
+- the 4th-order pixel→λ polynomial for each channel;
+- the lamp spectra seen by both channels (one L/E column pair per lamp,
+  peak-normalised);
+- `deltawl`.
+
+This is our ask #2 (lab slit-function and wavelength-calibration data).
+There are no L1A sequences and no `HYPERNETS_CAL_*.nc` files, so Phase 0b
+tasks 9-12 and 14 and all of Phase 3 are still waiting on the delivery.
+
+**What it says** (`wavecal/lab_data_examine.py`; I re-ran it and checked the
+key numbers and the FWHM figure)
+- **The lab confirms H2, instrument by instrument.**  Median ΔFWHM = L − E
+  over the 400-680 nm lines (lab | our field table):
+
+  | instrument | lab | field |
+  |---|---|---|
+  | 120242 | +0.44 | 0.39 |
+  | 122302 | +0.47 | 0.46 |
+  | 122304 | +0.39 | 0.39-0.49 |
+  | 121222 | −0.04 | −0.05 |
+  | 121231 | +0.02 | 0.08 |
+  | 122305 | −0.06 | 0.01 |
+  | **122303** | **−0.02** | **0.14** |
+
+  The srf/linear split matches exactly, and 122303 is clearly `linear`
+  (it is currently flagged `method_sensitive`).  Our field FWHM(λ) models
+  sit within ~0.1 nm of the lamp widths, channel by channel.  We had thought
+  E from L2 read 0.06-0.09 nm too wide; the lamp does not support that.
+- **The narrow-E instruments have flat-topped E SRFs.**  Super-Gaussian
+  exponent p ≈ 2.5-2.9 for E on 120242, 122302, 122303, 122304 and 122305,
+  against p ≈ 2.1 (Gaussian) for L everywhere and for E on 121222/121231.
+  χ²_ν drops 2-5× for E with a super-Gaussian.  There are no Lorentzian
+  wings (pseudo-Voigt η = 0), and the profiles are slightly wider on the
+  blue side.  Phase 2 task 9b found that `srf` keeps 76-84 % of its gain
+  for a flat-topped SRF, so that is the relevant row.
+  - Caveat: our Fraunhofer fit on VEIT gave p_E = 2.23.  Lamp light filling
+    the diffuser need not mimic sky light, so the field shape still matters.
+- **We now have every instrument's own E wavelength grid.**  The processor's
+  grids are the lab polynomials cropped to 350 ≤ λ < 1100 nm.  This
+  reproduces the VEIT L1A E and L grids to 2e-5 nm, and the Release 2 L grid
+  of every instrument (one red-end pixel is uncertain on 120242).
+  - The 122304 proxy we used for the other instruments' E grids is off by
+    0.15-1.3 nm (up to more than 2 pixels).  It also has the wrong E-pixel
+    phase relative to L.
+  - Own-grid E − L offsets at 400/550/700 nm: about −0.5/−0.4/−0.3 nm on
+    the narrow-E units, and −0.1 to +0.01 nm on 121222/121231.
+- **Release 2 uses one wavelength calibration per instrument, not per
+  period.**  122304 after its 2024-11 recalibration still runs on the
+  2023_01 polynomial; the 2024_09 lab polynomial differs by 0.02-0.05 nm
+  rms, up to 0.10 nm.  122302's 2024_09 lab epoch is not used either.
+  121222 has no lab epoch for its 2025-03 recalibration.
+- **The scale is air.**  All 19 reference lines are NIST air wavelengths.
+  This settles interim-report ask #7.
+- **A common lab polynomial error.**  The 4th-order fit misses the same
+  lines by the same amounts on all seven instruments and both channels:
+  +0.09 nm at Hg 404.7, −0.09 at Hg 546.1, ~±0.1 nm in the NIR.  It matches
+  our 0.13 nm "common window pattern" (Phase 2 open concern #1) near 545 and
+  585 nm, but not at 405/435.  Between 440 and 690 nm only one lamp line
+  constrains it.
+- **Stability on the lab side.**  Between epochs, FWHM moves ≤ 0.12 nm and
+  the polynomial ≤ 0.09 nm (120242, over four years).  122302 and 122304
+  change by ≤ 0.04 nm from 2023 to 2024.  All of this is well under G0(b)'s
+  0.2 nm.
+- **Stray light.**  The Xe floor is ≤ 3e-4 of a bright line.  The near
+  wings at ±3 nm are 1 % on the red side and 3-5 % on the blue side.
+- **`deltawl`** is reference λ − nominal-grid λ.  The nominal grid is the
+  `wl` column of `lamp_vnir.dat`, a fixed per-instrument (probably factory)
+  polynomial.  The model fits to 0.002-0.013 nm rms.  It is not a fit
+  residual.
+
+**A route around the missing L1A** (`wavecal/invert_l2_irradiance.py`).
+L1C/L2 `irradiance` is linear interpolation of the mean E onto the L grid:
+E_L = M·E, where M depends only on the two grids.  We now know both grids,
+so E on its native grid can be recovered by least squares.
+- On VEIT, recovering E from L1C with the lab 2023_01 grid matches the true
+  L1A E to 1.5e-5 rms (5e-5 max) over 400-900 nm.  Its second differences
+  match to 0.2 % of the E signal.  cond(M) = 42.
+- **It is only as good as the grid.**  The 2024_09 polynomial (0.05 nm off)
+  gives an 18 % error in the second differences.  So we must use the
+  polynomial the processor actually used.  That is verified for 122304
+  only; for the others we infer it from the matching L grid.
+- If this holds, we could do several things now on the Release 2 L2B files,
+  which carry E_L, Ld, Lu, Lw and ρw:
+  - fit E widths on the native grid with the correct grid, not the 122304
+    proxy, so no L2 E-width bias is left to estimate;
+  - run Phase 0b tasks 10-12 in L2 form on the 224 requested sequences
+    (beyond 8c);
+  - run Phase 3's in-situ test (recompute ρw with `linear` /
+    `ruddick2023` / `srf`).
+
+  Things that still need L1A: per-scan data (`ed_cv_750`, scan-level fits),
+  the Lu/Ld scan splits, the cal `.nc` files, and a check of the grid
+  inference on instruments other than 122304.
+
+**Can we proceed?**  Partly.  What I propose, in order:
+1. **Close the lab half of task 13.**  Promote the reader to a module
+   (default `hypernet/labcal.py`).  Commit the lab table
+   (`hypernet/data/lab_srf.csv`: per instrument × epoch × channel × line,
+   FWHM, super-Gaussian p, the polynomial) and per-instrument E/L grids.
+   Add tests.
+2. **Revise the Phase 2 SRF table.**
+   - Use each instrument's own E grid instead of the proxy, and refit the
+     Release 2 E widths with it.
+   - Set 122303 to `linear`.
+   - Add an SRF-shape column (super-Gaussian p for E on the srf
+     instruments), then re-run the VEIT check and task 9b with the lab
+     shape.
+   - Keep the field values as the source of truth for widths, with the lab
+     as validation.
+3. **Revisit the wavelength-scale correction.**  Test whether the lab's
+   common polynomial error explains the common window pattern, and if so
+   replace the empirical pattern with it.
+4. **Test the L2 inversion on the archive.**  Check that the recovered E is
+   physically sensible across instruments, e.g. that E-line fits on
+   recovered E agree with the lab FWHM.  If so, run Phase 3 on the 224
+   requested sequences from L2B as a *provisional* G3, and re-run it when
+   the L1A arrives.
+5. **A provisional G0 report** (`gate_G0.md`) from Release 2 + lab: (a)
+   confirmed, (b) passes, (c) air scale, offsets ≤ 0.1 nm.  It would be
+   marked provisional until the L1A is fitted.
+
+**Questions for JXP**
+1. OK to proceed with 1-5 in that order?  Should 2-4 reopen Phase 2 / start
+   Phase 3 in their own prompt docs, or go here?
+>A. Yes, proceed with 1-5 in that order.  And add a step 6 which is to udpate the `wiggles_interim_report.md` with the new analysis.  Also, please generate a new prompt doc named `wiggles_lab_data_prompts.md` which will be used to prompt the agent to perform 1-5 + step 6.
+2. Item 4 runs Phase 3 before the L1A delivery, on reconstructed E.  Do you
+   want that, or would you rather wait for the L1A?
+>A. Let's wait for the L1A.
+3. Questions back to Joel/Kevin:
+   - Why does the processor keep the 2023_01 wavelengths after the
+     2024-11 recalibration of 122304, and likewise for 122302?
+   - Is there a 2025 lab epoch for 121222?
+   - What is the nominal `wl` grid in `lamp_vnir.dat`?
+   - Is the lamp illuminating the diffuser the same way the sky does?
+   - The L1A delivery and cal files are still outstanding.
+
+   Shall I draft that note?
+>A. Yes, draft it.  I will send by email, so use plain text, not markdown.
+4. Where should the per-instrument grids live: `hypernet/data/` (≈10 small
+   CSVs) or computed on the fly from the committed coefficients?  Default:
+   commit the coefficients and compute the grids.
+>A. Use your default.
+
 ## Logs
 
 ### 2026-09-26 -- Setup #1
@@ -639,3 +799,64 @@ We would also ask for:
   short reply to Kevin, then hold.  The reply draft is given in the chat for
   JXP and was not saved to `correspondence/`.  A task-8e run was started and
   then stopped before it changed any file, so 8e is still open.
+
+### 2026-10-17 -- New data #1
+
+- Read Joel's `wiggles_lab_data.zip` (52 files, 7 instruments, 13 lab
+  wavelength-calibration epochs) and unzipped it to
+  `$OS_COLOR/hypernet/wiggles/lab_data/`.  It holds no L1A and no cal
+  `.nc` files.
+- A Fable subagent wrote `wavecal/lab_data_examine.py` (965 lines; outputs
+  in `.../lab_data/derived/`): the inventory, the file semantics, the grid
+  crops, the FWHM comparison with `hypernet/data/srf_table.csv`, line shapes,
+  stability and wings.  I re-ran it and checked the ΔFWHM table, the VEIT
+  grid crop and the line-shape summary against its output, plus the FWHM
+  comparison figure.
+- Wrote `wavecal/invert_l2_irradiance.py`.  On VEIT, recovering native E
+  from the L1C irradiance with the lab grid reproduces L1A E to 1.5e-5.
+  The 2024_09 grid gives 18 % error in the second differences, so the grid
+  must be the one the processor used.
+- Wrote New data #1 in the Q&A: findings, what can proceed (the lab half of
+  task 13, the SRF-table revision, the window pattern, the L2 inversion
+  route to Phase 3, a provisional G0), and 4 questions.  No package code
+  changed.
+- Learned:
+  - the lab data confirm the field E/L split on all seven instruments and
+    put 122303 firmly in the `linear` group;
+  - the narrow-E units have flat-topped E SRFs (p ≈ 2.5-2.9);
+  - Release 2 wavelengths come from one lab polynomial per instrument;
+  - the HYPSTAR scale is air;
+  - a ~0.1 nm common polynomial error sits on every instrument.
+  - The `egrid_122304_2024-11*.csv` written by the script uses the 2024_09
+    polynomial, which the processor does not use.  Use the 2023_01 grid for
+    that period.
+
+### 2026-10-18 -- New data #1, answers
+
+- JXP's answers:
+  - proceed with items 1-5 in order, plus an item 6 (update
+    `reports/wiggles_interim_report.md`), all driven by a new prompt doc;
+  - **Phase 3 waits for the L1A**, so nothing runs on reconstructed E;
+  - draft the note to Joel/Kevin in plain text for email;
+  - grids are computed from committed coefficients (the default).
+- Wrote `claude_prompts/wiggles/wiggles_lab_data_prompts.md` in the house
+  structure (Opus 5.5).
+  - Tasks:
+    1. Setup;
+    2. `hypernet/labcal.py` with `lab_wl_coefs.csv`, `lab_srf.csv`,
+       `grid_for` and `PROCESSOR_EPOCH`;
+    3. the SRF-table revision: own E grids replace the 122304 proxy in
+       `hypstar_grids.npz`, phase0c, phase2_srf_table and phase2_wavescale;
+       122303 → `linear`; `shape`/`shape_p` columns; re-runs of the VEIT
+       check and task 9b;
+    4. the window pattern vs the lab polynomial residual;
+    5. validation of the L2 inversion only;
+    6. a provisional `gate_G0.md`;
+    7. the interim-report update, keeping the 2026-10-15 version.
+  - Replaced committed products are kept as `*_pre_lab`.
+- Wrote `correspondence/wiggles_note_lab_data.txt` (plain text, not sent).
+  It thanks Joel, gives six findings and asks five questions: the
+  wavelength epoch after recalibration, a 2025 lab epoch for 121222, the
+  nominal `wl` grid, how the lamp illuminates the E diffuser, and the L1A /
+  cal-file status.
+- `pytest -q`: 137 passed.  No package code changed.

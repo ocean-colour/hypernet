@@ -354,3 +354,117 @@ def test_propagation_2d_columns():
     e1, i1 = edinterp.propagate_ed_to_l(GE, E[:, 1], GL, seed=11, **kw)
     np.testing.assert_allclose(ed[:, 1], e1, rtol=1e-14)
     np.testing.assert_allclose(info['u_rel_random'][:, 1], i1['u_rel_random'], rtol=1e-12)
+
+
+# --- the L2 inversion (lab data prompts, task 5; Setup Q10) ----------------------------
+def _native_e(wE):
+    """A smooth continuum with solar-like absorption lines, seen at ~2.3 nm."""
+    lam = np.arange(340.0, 1110.0, 0.01)
+    rng = np.random.default_rng(3)
+    y = 1.0 + 0.2 * np.sin(lam / 60.0)
+    for mu in rng.uniform(395, 1095, 400):
+        y *= 1 - rng.uniform(0.05, 0.6) * np.exp(-0.5 * ((lam - mu) / rng.uniform(0.05, 0.4)) ** 2)
+    return convolve_to_grid(lam, y, wE, 2.3)
+
+
+def _hypstar_grids():
+    from hypernet import labcal
+    return labcal.grid_for('122304', 'E'), labcal.grid_for('122304', 'L')
+
+
+def test_interp_matrix_is_np_interp():
+    wE, wL = _hypstar_grids()
+    E = _native_e(wE)
+    M = edinterp.interp_matrix(wE, wL)
+    np.testing.assert_allclose(M @ E, np.interp(wL, wE, E), rtol=0, atol=1e-13)
+    # the L pixels beyond the E grid are clamped rows, as np.interp
+    assert wL[0] < wE[0] and wL[-1] > wE[-1]
+    assert (M[0].toarray().ravel() == np.eye(wE.size)[0]).all()
+
+
+def test_recover_native_e_round_trip_and_exactness():
+    wE, wL = _hypstar_grids()
+    E = _native_e(wE)
+    M = edinterp.interp_matrix(wE, wL)
+    EL = M @ E
+    Eh, info = edinterp.recover_native_e(EL, wL, wE, return_info=True)
+    np.testing.assert_allclose(M @ Eh, EL, rtol=1e-9)            # M recover(M E) = M E
+    m = (wE > 400) & (wE < 900)
+    assert np.abs(Eh[m] / E[m] - 1).max() < 1e-8                 # noiseless: E itself
+    assert info['n_unconstrained'] == 0 and info['n_dropped_rows'] == 0
+    # 2-D input, one column per sequence
+    E2 = edinterp.recover_native_e(np.column_stack([EL, 2 * EL]), wL, wE)
+    np.testing.assert_allclose(E2[:, 1], 2 * E2[:, 0], rtol=1e-9)
+
+
+def test_recover_native_e_nans_and_unconstrained_pixels():
+    wE, wL = _hypstar_grids()
+    E = _native_e(wE)
+    EL = edinterp.interp_matrix(wE, wL) @ E
+    # an E grid running past the last L pixel: its last pixels are unconstrained, and
+    # losing the clamped end row leaves a red-end stretch undetermined -> NaN there only
+    wE2 = np.concatenate([wE, wE[-1] + 0.47 * np.arange(1, 4)])
+    Eh, info = edinterp.recover_native_e(EL, wL, wE2, return_info=True)
+    bad = ~np.isfinite(Eh)
+    assert info['n_unconstrained'] == bad.sum() >= 3 and np.isnan(Eh[-3:]).all()
+    assert wE2[bad].min() > 1000.0                              # confined to the red end
+    m = (wE2 > 400) & (wE2 < 900)
+    assert np.abs(Eh[m] / E[m[:E.size]] - 1).max() < 1e-8
+    # NaN rows of E_L are dropped; the E pixels they alone constrained become NaN
+    EL3 = EL.copy()
+    EL3[700:704] = np.nan
+    Eh3, info3 = edinterp.recover_native_e(EL3, wL, wE, return_info=True)
+    assert info3['n_dropped_rows'] == 4
+    ok = np.isfinite(Eh3)
+    assert 1 <= (~ok).sum() <= 60 and info3['n_unconstrained'] == (~ok).sum()
+    lost = wE[~ok]
+    assert lost.min() > wL[699] - 30 and lost.max() < wL[704] + 30   # only near the gap
+    m = ok & (wE > 400) & (wE < 900)
+    assert np.abs(Eh3[m] / E[m] - 1).max() < 1e-6
+    with pytest.raises(ValueError):
+        edinterp.recover_native_e(EL[:-1], wL, wE)
+
+
+def test_wrong_grid_is_detectable_only_against_the_truth():
+    """A 0.05 nm error in the E grid used for the inversion (lab data prompts,
+    task 5).  Against the truth it is plain: the second differences of the
+    recovered E are off by > 5 % (exact with the right grid).  In the recovered
+    spectrum itself it is not: the inversion returns the same spectrum resampled
+    at the wrong grid's positions, so its second-difference power (plain or
+    Nyquist) moves by < 2 % -- the reason the L2 data cannot verify the
+    processor's E epoch."""
+    wE, wL = _hypstar_grids()
+    E = _native_e(wE)
+    EL = edinterp.interp_matrix(wE, wL) @ E
+    sdp = edinterp.second_difference_power
+    m = ((wE > 400) & (wE < 900))[1:-1]
+
+    def d2(x):
+        return x[2:] - 2 * x[1:-1] + x[:-2]
+    E0 = edinterp.recover_native_e(EL, wL, wE)
+    assert np.sqrt(np.mean((d2(E0) - d2(E))[m] ** 2)) < 1e-9
+    for d in (0.05, -0.05):
+        Eg = edinterp.recover_native_e(EL, wL, wE + d)
+        err = np.sqrt(np.mean((d2(Eg) - d2(E))[m] ** 2)) / np.sqrt(np.mean(d2(E)[m] ** 2))
+        assert err > 0.05, d                                  # detected, given the truth
+        for ny in (False, True):
+            r = sdp(Eg, wE + d, nyquist=ny) / sdp(E, wE, nyquist=ny)
+            assert abs(r - 1) < 0.02, (d, ny)                 # invisible without it
+
+
+def test_recover_native_e_veit():
+    """VEIT (122304): native E from the L1C irradiance with labcal.grid_for
+    reproduces the L1A E to <= 1e-4 over 400-900 nm (Tier 2)."""
+    from hypernet import labcal
+    from hypernet import whn_l1a as wl
+    try:
+        f = wl.sequence_files(site='VEIT', seq_time='20260604T0845')
+        irr, l1c = wl.load_l1a_irr(f['L1A_IRR']), wl.load_l1c(f['L1C_ALL'])
+    except Exception:
+        pytest.skip('requires the VEIT sample')
+    wE = labcal.grid_for('122304', 'E')
+    Eh = edinterp.recover_native_e(np.nanmean(l1c['irradiance'], axis=1), l1c['wave'], wE)
+    m = (wE >= 400) & (wE <= 900)
+    rel = Eh[m] / irr['mean'][m] - 1
+    assert np.abs(rel).max() <= 1e-4
+    assert np.sqrt(np.mean(rel ** 2)) < 3e-5

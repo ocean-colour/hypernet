@@ -146,6 +146,137 @@ def linear_weights(wav_irr, wav_rad):
     return i, np.clip(w, 0.0, 1.0)
 
 
+def interp_matrix(wav_irr, wav_rad):
+    """The processor's resampling as a sparse matrix M (n_L x n_E):
+    ``M @ E == np.interp(wav_rad, wav_irr, E)``, built from
+    :func:`linear_weights` (so L pixels beyond the E grid are clamped rows)."""
+    from scipy import sparse
+    wav_irr = np.asarray(wav_irr, dtype=float)
+    wav_rad = np.asarray(wav_rad, dtype=float)
+    i, w = linear_weights(wav_irr, wav_rad)
+    rows = np.repeat(np.arange(wav_rad.size), 2)
+    cols = np.stack([i, i + 1], axis=1).ravel()
+    vals = np.stack([1.0 - w, w], axis=1).ravel()
+    keep = vals != 0
+    return sparse.csr_matrix((vals[keep], (rows[keep], cols[keep])),
+                             shape=(wav_rad.size, wav_irr.size))
+
+
+def recover_native_e(irradiance_L, wav_L, wav_E, atol=1e-14, btol=1e-14, iter_lim=20000,
+                     return_info=False, null_tol=1e-6):
+    """Invert the processor's resampling: native-grid E from the irradiance
+    stored on the L grid (L1C/L2), E_L = M E (:func:`interp_matrix`), by least
+    squares (``scipy.sparse.linalg.lsqr``).
+
+    It is only as good as ``wav_E``: the grid the processor really used
+    (``hypernet.labcal.grid_for``).  A wrong grid is *not* visible in the
+    result: the solution is the same spectrum resampled at the wrong grid's
+    positions (correctly labelled), smoothed differently -- on VEIT a 0.05 nm
+    error gives 7e-4 to 1e-3 in E and 24-36 % in its second differences
+    against the L1A truth resampled at those positions (1.5e-5 and 0.2 % with
+    the right grid), but the recovered spectrum's own second-difference power
+    moves by only 1-4 % (lab data prompts, task 5).
+
+    Edge and NaN rules (lab data prompts, Setup Q10):
+
+    - L pixels beyond the E range are clamped rows (``np.interp`` holds the
+      end value) and stay in the system: they are exact equations;
+    - L pixels whose irradiance is NaN are dropped (per column);
+    - E pixels that no remaining L pixel constrains (a zero column of M,
+      e.g. the last E pixel of 120242 beyond its last L pixel) are NaN;
+    - so are E pixels in the null space of the remaining system.  On HYPSTAR
+      n_L ~ n_E, so a gap of dropped rows can leave a stretch of E pixels
+      undetermined; the minimum-norm solution would put arbitrary values
+      there.  Checked (dense SVD) only when rows were dropped or columns are
+      unconstrained; ``null_tol`` is relative to the largest singular value.
+
+    Parameters
+    ----------
+    irradiance_L : array, (n_L,) or (n_L, n_seq)
+        Irradiance on ``wav_L``.
+    wav_L, wav_E : array
+        The L and E grids (nm), ascending.
+    atol, btol, iter_lim :
+        Passed to ``lsqr``.
+    return_info : bool
+        Also return a dict: ``n_dropped_rows``, ``n_unconstrained`` (zero
+        columns plus null-space pixels) and ``forward_rel_rms`` (rms of
+        M E_hat / E_L - 1 over the used rows), per column.
+
+    Returns
+    -------
+    numpy.ndarray
+        E on ``wav_E``, shape (n_E,) or (n_E, n_seq).
+    """
+    from scipy.sparse.linalg import lsqr
+    wav_L = np.asarray(wav_L, dtype=float)
+    wav_E = np.asarray(wav_E, dtype=float)
+    EL = np.asarray(irradiance_L, dtype=float)
+    one = EL.ndim == 1
+    EL2 = EL[:, None] if one else EL
+    if EL2.shape[0] != wav_L.size:
+        raise ValueError('irradiance_L must have wav_L.size rows (got %s for %d)'
+                         % (EL.shape, wav_L.size))
+    M = interp_matrix(wav_E, wav_L).tocsr()
+    out = np.full((wav_E.size, EL2.shape[1]), np.nan)
+    info = dict(n_dropped_rows=[], n_unconstrained=[], forward_rel_rms=[])
+    for k in range(EL2.shape[1]):
+        y = EL2[:, k]
+        good = np.isfinite(y)
+        Mg = M[good]
+        used = np.asarray((Mg != 0).sum(axis=0)).ravel() > 0
+        if good.sum() == 0 or not used.any():
+            info['n_dropped_rows'].append(int((~good).sum()))
+            info['n_unconstrained'].append(int(wav_E.size))
+            info['forward_rel_rms'].append(np.nan)
+            continue
+        A = Mg[:, used]
+        s = float(np.nanmedian(np.abs(y[good]))) or 1.0           # scale for lsqr
+        x = lsqr(A, y[good] / s, atol=atol, btol=btol, iter_lim=iter_lim)[0] * s
+        f = (A @ x) / y[good] - 1
+        xs = x.copy()
+        if (~good).any() or (~used).any():
+            _, sv, vt = np.linalg.svd(A.toarray(), full_matrices=True)
+            sv = np.concatenate([sv, np.zeros(vt.shape[0] - sv.size)])
+            null = vt[sv < null_tol * sv.max()]
+            if null.size:
+                xs[np.abs(null).max(axis=0) > 1e-6] = np.nan
+        out[used, k] = xs
+        info['n_dropped_rows'].append(int((~good).sum()))
+        info['n_unconstrained'].append(int(wav_E.size - np.isfinite(out[:, k]).sum()))
+        info['forward_rel_rms'].append(float(np.sqrt(np.mean(f[np.isfinite(f)] ** 2))))
+    res = out[:, 0] if one else out
+    if return_info:
+        if one:
+            info = {k: v[0] for k, v in info.items()}
+        return res, info
+    return res
+
+
+def second_difference_power(E, wav, band=(400.0, 900.0), nyquist=False):
+    """rms over ``band`` of the relative second difference on adjacent pixels,
+    d2_i = (E_{i+1} - 2 E_i + E_{i-1}) / E_i.
+
+    With ``nyquist=False`` this is the solar lines plus any pixel-alternating
+    structure; with ``nyquist=True``, d2 minus its 3-pixel running mean (the
+    Nyquist part, where a solar line of FWHM ~5 E pixels contributes little).
+    Neither detects a wrong E grid in :func:`recover_native_e` without a truth
+    to compare with (it moves them by 1-4 % on VEIT, < 1 % on synthetic
+    spectra); they remain useful as a sanity check for ringing.  NaNs are
+    ignored; ``E`` may be (n,) or (n, n_seq).
+    """
+    E = np.asarray(E, dtype=float)
+    wav = np.asarray(wav, dtype=float)
+    d2 = (E[2:] - 2 * E[1:-1] + E[:-2]) / E[1:-1]
+    w = wav[1:-1]
+    if nyquist:
+        k = np.ones(3) / 3
+        sm = np.apply_along_axis(lambda v: np.convolve(v, k, mode='same'), 0, d2)
+        d2, w = (d2 - sm)[1:-1], w[1:-1]
+    m = (w >= band[0]) & (w <= band[1])
+    return np.sqrt(np.nanmean(d2[m] ** 2, axis=0))
+
+
 def _combine(x, i, w):
     """(1 - w) x[i] + w x[i+1] along axis 0; a NaN reaches only the L pixels
     that use it with non-zero weight."""

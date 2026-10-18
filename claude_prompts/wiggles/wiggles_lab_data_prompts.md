@@ -1248,3 +1248,156 @@ interpolation) / v2 about its line, in nm:
   that.
 - A line-set refit that matches Joel's files needs no weights:
   `file_minus_fit_max` is ≤ 0.015 nm for the all-line refits.
+
+### 2026-10-18 -- Build #5 (Opus 5.5)
+
+Task 5 (validate the L2 inversion), with Setup Q10's default.  ρw was not
+recomputed and no Phase 3 metric was run.  Task 6 was not started.
+
+**Code** (`hypernet/edinterp.py`):
+
+- `interp_matrix(wav_irr, wav_rad)`: sparse M with M E = `np.interp`, built
+  from `linear_weights`, the single definition.
+- `recover_native_e(irradiance_L, wav_L, wav_E, ..., return_info=False,
+  null_tol=1e-6)`: least squares (`lsqr`, scaled) on 1-D or
+  (n_L, n_seq) input.  Edge rules:
+  - L pixels beyond the E range are clamped rows and stay in the system;
+  - NaN rows of E_L are dropped per column;
+  - E pixels with a zero column are NaN.
+  - **New:** so are E pixels in the null space of the remaining system,
+    found by a dense SVD that runs only when rows were dropped or columns
+    are empty.  HYPSTAR has n_L ≈ n_E (two of the L rows are the clamped
+    ones), so a gap of 4 dropped rows leaves a stretch undetermined.  The
+    minimum-norm solution put errors of up to 0.47 there, so these pixels
+    are now NaN, and only those.
+  - **New:** an E grid running past the last L pixel loses the clamped
+    anchor, and ~90 red-end pixels become NaN.  This is correct.
+  - `info` returns `n_dropped_rows`, `n_unconstrained` (NaN pixels) and
+    `forward_rel_rms`.
+- `second_difference_power(E, wav, band=(400, 900), nyquist=False)`: rms of
+  the relative second difference.  With `nyquist=True`, d2 minus its
+  3-pixel running mean (the "ringing index").
+
+**VEIT recovery** (L1C irradiance → native E with `grid_for('122304','E')`,
+against the L1A E, 400-900 nm):
+
+- relative error rms **1.55e-5**, max **5.3e-5**, second-difference error
+  0.19 %;
+- the same with the L1A grid itself;
+- `cond(M)` as before.
+
+**The central finding: the L2 data cannot verify which E grid the processor
+used.**
+
+- Solving M_wrong x = M_true E makes the wrong grid's piecewise-linear
+  curve match the true one at the L pixels.  So x is the same spectrum
+  resampled at the wrong grid's own positions, correctly labelled.
+- A 0.05 nm grid error therefore gives neither ringing nor a scale error;
+  it changes only the double-interpolation smoothing.
+- Against the L1A truth resampled at the wrong positions, it costs 7e-4 to
+  1e-3 in E and 24-36 % in the second differences (2024_09 grid: 6.6e-4 and
+  17 %).  Phase 3 would feel this, but the recovered spectrum shows nothing.
+- Three detectors were tried:
+
+  | detector | result |
+  |---|---|
+  | second-difference power, plain / Nyquist | moves 1-4 % on VEIT and < 1 % on synthetic spectra (`lab_inversion_synthetic.py`, 400-6000 lines, noise 0-3e-3) |
+  | minimum of the ringing index over the grid shifted by δ (`delta_min`) | at the truth on VEIT (δ = 0; the ±0.05 injections found), but on synthetic spectra with a correct grid at −0.06 to −0.08 nm; the `own+0.05` "control" moves it by −0.05 only because the index depends on the absolute grid position, so it is not a control |
+  | native minus `via_grid` wavelength scale (`dshift`) | ±0.02 nm for every grid, including the 0.05 nm control |
+
+- What the ringing index does catch is a grossly wrong grid with a
+  different pixel-phase pattern.  The 122304 proxy rings 1.4-2.6× more than
+  the own grid on 5 of 6 instruments (not on 122303: 0.83×).  Every own grid
+  rings at VEIT's level: 0.0067-0.0092, against 0.0077 on VEIT L1C with the
+  true grid.
+- My first single-sequence reading of `delta_min` (121222 at +0.06, 122302
+  at −0.04) looked like evidence against the inferred E epochs.  The
+  synthetic test shows that a correct grid produces such offsets, so it is
+  not evidence.
+
+**E-epoch verdict** (Release 2, 5 sequences per instrument × period, own
+grid; all recovered E positive over 400-900 nm; `sdp` 0.0085-0.0139):
+
+| instrument | period | ring (own) | proxy / own | delta_min (diagnostic) | dshift | verdict |
+|---|---|---|---|---|---|---|
+| 120242 | 2024-11 | 0.0079 | 1.39 | −0.08 | +0.006 | consistent (gross); ≤ 0.05 nm not testable |
+| 121222 | 2021-10 | 0.0071 | 1.84 | +0.06 | −0.001 | consistent (gross); ≤ 0.05 nm not testable |
+| 121222 | 2025-03 | 0.0068 | 2.03 | +0.06 | −0.002 | consistent (gross); ≤ 0.05 nm not testable |
+| 121231 | 2021-10 | 0.0067 | 2.59 | 0.00 | −0.002 | consistent (gross); ≤ 0.05 nm not testable |
+| 122302 | 2023-01 | 0.0084 | 1.65 | −0.04 | +0.005 | consistent (gross); ≤ 0.05 nm not testable |
+| 122303 | 2023-01 | 0.0088 | 0.83 | 0.00 | −0.014 | consistent (gross); ≤ 0.05 nm not testable |
+| 122304 | 2023-01 | 0.0091 | – | +0.01 | −0.000 | verified (VEIT L1A) |
+| 122304 | 2024-11 | 0.0092 | – | +0.01 | +0.007 | verified (VEIT L1A) |
+| 122305 | 2023-01 | 0.0086 | 2.19 | +0.01 | −0.004 | consistent (gross); ≤ 0.05 nm not testable |
+
+- The other-epoch controls (120242 2022_06, 121222 `_tst`, 122302 and
+  122304 2024_09) are indistinguishable from the own grid on every
+  detector, as expected for 0.01-0.05 nm differences.
+- The evidence for the E epoch on the six instruments other than 122304
+  therefore stays the L-grid match (`inferred_L`).  Only L1A (or the
+  processor's own E wavelengths) can settle it.  This belongs with the
+  delivery request and the note to Joel/Kevin.
+
+**Widths** (E FWHM at 546 nm, median of 5 sequences): native-grid fit of
+the recovered E / `via_grid` fit of the L2 E / lab.  The lab value is the
+lab FWHM for Gaussian fits and our super-Gaussian lamp refit for the
+super-Gaussian ones.
+
+| instrument | period | Gaussian: native / via / lab | super-Gaussian (lab p): native / via / lab |
+|---|---|---|---|
+| 120242 | 2024-11 | 2.181 / 2.183 / 2.225 | 2.370 / 2.375 / 2.334 |
+| 121222 | 2021-10 | 2.757 / 2.759 / 2.741 | – |
+| 121222 | 2025-03 | 2.730 / 2.729 / 2.741 | – |
+| 121231 | 2021-10 | 2.871 / 2.871 / 2.807 | – |
+| 122302 | 2023-01 | 2.217 / 2.217 / 2.258 | 2.513 / 2.515 / 2.490 |
+| 122303 | 2023-01 | 2.715 / 2.726 / 2.727 | – |
+| 122304 | 2023-01 | 2.321 / 2.320 / 2.368 | 2.577 / 2.578 / 2.508 |
+| 122304 | 2024-11 | 2.353 / 2.353 / 2.373 | 2.621 / 2.623 / 2.513 |
+| 122305 | 2023-01 | 2.711 / 2.707 / 2.759 | – |
+
+- Native and `via_grid` agree to ≤ 0.011 nm everywhere.  They carry the
+  same information, so the `via_grid` route of task 3 loses nothing.
+- Field − lab is −0.05 to +0.06 for the Gaussian rows and −0.02 to +0.11
+  for the super-Gaussian rows.  This is the 122304 over-width at the lab p
+  seen in task 3.
+
+**Products:**
+
+- new `hypernet/wiggles/lab_inversion_check.py`, writing:
+  - `lab_inversion_check.csv` (155 rows: per sequence × grid);
+  - `lab_inversion_summary.csv` (per instrument × period × grid, with the
+    verdict and the widths);
+  - `figs/lab/inversion_check.png`.  Panels: (a) VEIT errors vs the L1A
+    truth at 425-445 nm; (b) the Release 2 ringing scans, labelled as a
+    diagnostic; (c) the widths;
+  - intermediates in `$OS_COLOR/hypernet/wiggles/lab_data/inversion/`
+    (`veit.csv`, `ring_scans.csv`, `widths.csv`, `run.log`).
+- New helper scripts:
+  - `hypernet/wiggles/lab_inversion_synthetic.py`: detector behaviour on
+    synthetic spectra;
+  - `lab_inversion_curves.py`: prints the median ringing curves.
+
+**Tests** (`test_edinterp.py`, +5 tests; `pytest -q`: **156 passed**):
+
+- Tier 1:
+  - `interp_matrix` = `np.interp`, with clamped rows;
+  - the round trip M·recover(M·E) = M·E, exactness, and 2-D input;
+  - NaN rows and unconstrained / null-space pixels.  Only pixels near the
+    gap or the red end become NaN, and the rest is exact to 1e-6;
+  - `test_wrong_grid_is_detectable_only_against_the_truth`: a ±0.05 nm
+    error gives a > 5 % second-difference error against the truth, but
+    moves the plain and Nyquist powers by < 2 %.
+  - The prompt's "detected as rising second-difference power" is not
+    achievable, so the test pins the honest version.
+- Tier 2: `test_recover_native_e_veit` (VEIT ≤ 1e-4 over 400-900 nm; it
+  skips without the sample).
+
+**Learned:**
+
+- Inverting a linear resampling with the wrong nodes is self-consistent.
+  The data cannot reject a grid that is off by ≤ 0.05 nm; they can reject
+  only a grossly different pixel-phase pattern.
+- The task's premise ("a wrong grid shows up as excess second-difference
+  power") holds only against a truth.
+- For Phase 3, the inversion route is as good as its grid, and the grid
+  cannot be checked from L2.  This adds weight to waiting for the L1A.

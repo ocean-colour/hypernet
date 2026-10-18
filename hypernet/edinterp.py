@@ -350,8 +350,11 @@ def _corrected(wav, s):
 
 def _fwhm_fn(model, coeffs):
     """A plain callable FWHM(lambda) with drawn coefficients (not cached by
-    hypernet.srf, so MC draws do not fill the matrix cache)."""
-    return lambda lam: srfmod.fwhm_at(lam, coeffs, model.lam_ref, model.lam_scale)
+    hypernet.srf, so MC draws do not fill the matrix cache), carrying the
+    model's SRF shape."""
+    shape, par = srfmod.srf_shape(model)
+    return srfmod.ShapedFWHM(
+        lambda lam: srfmod.fwhm_at(lam, coeffs, model.lam_ref, model.lam_scale), shape, par)
 
 
 def propagate_ed_to_l(wav_irr, irradiance, wav_rad, *, emod=None, srf_irr=None, srf_rad=None,

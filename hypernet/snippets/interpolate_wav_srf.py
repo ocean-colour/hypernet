@@ -150,7 +150,9 @@ class InterpolationWavSRF(MeasurementFunction):
         """The SRFModel itself (cached convolutions) unless drawn coefficients differ."""
         if coeffs is None or np.array_equal(coeffs, model.coeffs):
             return model
-        return lambda lam: srfmod.fwhm_at(lam, coeffs, model.lam_ref, model.lam_scale)
+        shape, par = srfmod.srf_shape(model)
+        return srfmod.ShapedFWHM(
+            lambda lam: srfmod.fwhm_at(lam, coeffs, model.lam_ref, model.lam_scale), shape, par)
 
     @staticmethod
     def get_name():

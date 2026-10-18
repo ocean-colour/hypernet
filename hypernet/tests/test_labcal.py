@@ -177,3 +177,33 @@ def test_grid_for_reproduces_release2_l_grids():
         assert np.abs(g - w).max() <= 1e-4, sn
         seen.add(sn)
     assert seen == set(labcal.INSTRUMENTS)
+
+
+def test_npz_grids_equal_grid_for():
+    """hypstar_grids.npz holds every instrument's processor grids, exactly
+    labcal.grid_for (Setup Q11), so the two cannot drift."""
+    from hypernet import twin
+    g = twin.load_grids()
+    for sn in labcal.INSTRUMENTS:
+        for ch in labcal.CHANNELS:
+            k = 'grid_%s_%s' % (ch, sn)
+            assert k in g, k
+            ref = labcal.grid_for(sn, ch)
+            assert g[k].shape == ref.shape and np.abs(g[k] - ref).max() <= 1e-9, k
+    assert {'noise_E_scan', 'noise_Ld_scan', 'noise_Lu_scan'} <= set(g)
+    assert g['noise_E_scan'].size == g['grid_E_122304'].size
+
+
+def test_srf_shape_for_classes():
+    """Setup Q7: super-Gaussian E on 120242, 122302, 122304 only; L Gaussian;
+    p from the physical epoch (Q8)."""
+    for sn in labcal.INSTRUMENTS:
+        e = labcal.srf_shape_for(sn, 'E', '2026-01-01')
+        assert e['shape'] == ('supergauss' if sn in ('120242', '122302', '122304') else 'gauss')
+        assert labcal.srf_shape_for(sn, 'Ld', '2026-01-01')['shape'] == 'gauss'
+        if e['shape'] == 'supergauss':
+            assert 2.4 < e['shape_p'] < 3.1
+    a = labcal.srf_shape_for('122304', 'E', '2023-02-01')
+    b = labcal.srf_shape_for('122304', 'E', '2024-11-12')
+    assert (a['lab_epoch'], b['lab_epoch']) == ('2023_01', '2024_09')
+    assert a['shape_p'] != b['shape_p']

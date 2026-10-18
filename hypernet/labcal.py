@@ -518,3 +518,61 @@ def physical_epoch(sn, date, table=None):
     if len(before):
         return before.loc[pd.to_datetime(before['coef_date']).idxmax(), 'epoch'], True
     return g.loc[d.idxmin(), 'epoch'], False
+
+
+# ----------------------------------------------------------------------------
+# the lab SRF shape (lab data prompts, Setup Q6-Q8)
+# ----------------------------------------------------------------------------
+#: Isolated lamp lines for the shape (as ``wavecal/lab_data_examine.py``).
+CLEAN_LINES = (404.6563, 435.8328, 546.0735, 763.5106, 826.4522, 881.9411)
+#: Setup Q7: a channel is super-Gaussian where the median chi2_nu of the
+#: super-Gaussian fit is below this fraction of the Gaussian one.
+SG_CHI2_RATIO = 0.5
+
+
+def lab_shape(instrument, channel, epoch=None, srf=None):
+    """Median lamp-line shape of ``instrument`` / ``channel`` at ``epoch``
+    (default :data:`PROCESSOR_EPOCH`), over :data:`CLEAN_LINES` with
+    S/N >= :data:`SNR_MIN`.
+
+    Returns:
+        dict: ``epoch``, ``n``, ``p`` (median super-Gaussian exponent),
+        ``p_min``, ``p_max``, ``asym``, ``chi2_ratio`` (median chi2_sg /
+        median chi2_gauss) and ``supergauss`` (chi2_ratio < SG_CHI2_RATIO).
+    """
+    sn = _sn(instrument)
+    ch = _channel(channel)
+    ep = epoch or PROCESSOR_EPOCH[sn]['epoch']
+    s = load_lab_srf() if srf is None else srf
+    g = s[(s['sn'] == sn) & (s['epoch'] == ep) & (s['channel'] == ch) &
+          s['lam_ref'].isin(CLEAN_LINES) & ~s['low_snr']]
+    if g.empty:
+        raise KeyError('no clean lab lines for %s %s %s' % (sn, ep, ch))
+    ratio = float(g['chi2_sg'].median() / g['chi2_gauss'].median())
+    return dict(epoch=ep, n=int(len(g)), p=float(g['sg_p'].median()),
+                p_min=float(g['sg_p'].min()), p_max=float(g['sg_p'].max()),
+                asym=float(g['asym'].median()), chi2_ratio=ratio,
+                supergauss=ratio < SG_CHI2_RATIO)
+
+
+def srf_shape_for(instrument, channel, date, srf=None, table=None):
+    """The SRF shape for the SRF table (Setup Q6-Q8).
+
+    The class (super-Gaussian or Gaussian) is decided on the processor epoch
+    (:func:`lab_shape`, rule :data:`SG_CHI2_RATIO`); L is always Gaussian.  A
+    super-Gaussian's exponent p is the lab median at the epoch that describes
+    the instrument at ``date`` (:func:`physical_epoch`).
+
+    Returns:
+        dict: ``shape`` ('supergauss' or 'gauss'), ``shape_p`` (NaN for
+        Gaussian), ``shape_source`` ('lab'), ``lab_epoch``, ``chi2_ratio``.
+    """
+    sn = _sn(instrument)
+    ch = _channel(channel)
+    cls = lab_shape(sn, ch, srf=srf)
+    ep, _ = physical_epoch(sn, date, table)
+    if ch == 'L' or not cls['supergauss']:
+        return dict(shape='gauss', shape_p=np.nan, shape_source='lab', lab_epoch=ep,
+                    chi2_ratio=cls['chi2_ratio'])
+    return dict(shape='supergauss', shape_p=lab_shape(sn, ch, ep, srf=srf)['p'],
+                shape_source='lab', lab_epoch=ep, chi2_ratio=cls['chi2_ratio'])

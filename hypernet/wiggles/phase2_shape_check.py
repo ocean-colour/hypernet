@@ -21,6 +21,14 @@ asymmetric Gaussian (sigma (1 +- a) either side, FWHM kept) with a = 0.05,
 and, for the prediction, E = L - dFWHM (0.2, 0.8 nm) for the Gaussian, the
 median super-Gaussian and asym 0.10.
 
+**The lab shape** (lab data prompts task 3): ``lab_E_supergauss`` has E
+super-Gaussian with the lab p of 122304 (``labcal.srf_shape_for`` at its
+2024-11 calibration) and L Gaussian, as the lamp lines show, at the Gaussian
+FWHMs (``_dfwhm0.2``: E = L - 0.2 nm).  Besides ``true_fwhm`` and ``fitted``
+(Gaussian corrections) it has the variant ``shaped``: the correction knows
+the E shape (``srf.ShapedFWHM`` with the true FWHM and p), as the SRF table
+now does.
+
 Metric as Phase 1 task 9: rms(rho_w'' - rho_w''_true), h = 1 nm, within +-5 nm
 of the ten lines; ``reduction`` = 1 - rms / rms_linear (same case).  Also the
 correlation of the srf residual with Ed''/Ed near the lines (G3's trigger).
@@ -47,7 +55,7 @@ import time
 import numpy as np
 import pandas as pd
 
-from hypernet import edinterp, emod, srf, srfcal, twin
+from hypernet import edinterp, emod, labcal, srf, srfcal, twin
 from hypernet.wiggles import FIGDIR, WIGGLES_DIR
 from hypernet.wiggles.phase1_twin import L_RANGE, masks, second_diff
 
@@ -58,9 +66,15 @@ METHODS = ('linear', 'ruddick2023', 'srf')
 H = 1.0
 
 
-def _case(name, shape='gauss', par_E=None, par_L=None, dfwhm=None, l_shift=0.0):
+def _case(name, shape='gauss', par_E=None, par_L=None, dfwhm=None, l_shift=0.0,
+          shape_L=None, shaped=False):
     return dict(name=name, shape=shape, par_E=par_E, par_L=par_L, dfwhm=dfwhm,
-                l_shift=l_shift)
+                l_shift=l_shift, shape_L=shape if shape_L is None else shape_L,
+                shaped=shaped)
+
+
+#: The lab E exponent of the twin instrument (122304 at its 2024-11 calibration).
+P_LAB = labcal.srf_shape_for(INST, 'E', '2024-11-12')['shape_p']
 
 
 CASES = [
@@ -73,6 +87,9 @@ CASES = [
     _case('Lshift_+0.05', l_shift=0.05),
     _case('Lshift_+0.10', l_shift=0.10),
 ]
+CASES += [_case('lab_E_supergauss', 'supergauss', P_LAB, None, shape_L='gauss', shaped=True),
+          _case('lab_E_supergauss_dfwhm0.2', 'supergauss', P_LAB, None, dfwhm=0.2,
+                shape_L='gauss', shaped=True)]
 for _d in (0.2, 0.8):
     CASES += [_case('gauss_dfwhm%.1f' % _d, dfwhm=_d),
               _case('supergauss_median_dfwhm%.1f' % _d, 'supergauss', 2.54, 2.27, dfwhm=_d),
@@ -131,7 +148,7 @@ def run_scene(args):
         tL = gL + c['l_shift']
         Eobs = observe_shape(lam, scene['Ed'], gE, fE, c['shape'], c['par_E'])[0]
         Lw_, Ed_, Lu, Ld = observe_shape(lam, np.vstack([scene['Lw'], scene['Ed'], scene['Lu'],
-                                                         scene['Ld']]), tL, fL, c['shape'],
+                                                         scene['Ld']]), tL, fL, c['shape_L'],
                                          c['par_L'])
         truth = np.pi * Lw_ / Ed_
         t2 = second_diff(gL, truth, H)
@@ -141,6 +158,8 @@ def run_scene(args):
             mE = srfcal.calibrate_srf(gE, Eobs, ref=(lam, scene['Ed']))
             mL = srfcal.calibrate_srf(gL, Ld, channel='Ld', ref=(lam, scene['Ld']))
             corr['fitted'] = (mE, mL)
+        if c['shaped']:
+            corr['shaped'] = (srf.ShapedFWHM(fE, c['shape'], c['par_E']), fL)
         lin = None
         for variant, (a, b) in corr.items():
             for m in METHODS:
@@ -221,11 +240,13 @@ def figure(s, p, pc):
     main = [c['name'] for c in CASES]
     q = s[(s['method'] == 'srf')]
     x = np.arange(len(main))
-    for k, (variant, col) in enumerate((('true_fwhm', '#1baf7a'), ('fitted', '#2a78d6'))):
+    for k, (variant, col) in enumerate((('true_fwhm', '#1baf7a'), ('fitted', '#2a78d6'),
+                                        ('shaped', '#4a3aa7'))):
         g = q[q['variant'] == variant].set_index('case')
         y = [100 * g.loc[c, 'reduction'] if c in g.index else np.nan for c in main]
-        ax.plot(x + (k - 0.5) * 0.25, y, 'o', ms=7, color=col,
-                label='srf, Gaussian correction with %s' % variant.replace('_', ' '))
+        ax.plot(x + (k - 1) * 0.22, y, 'o', ms=6, color=col,
+                label='srf, correction with the true E shape' if variant == 'shaped' else
+                'srf, Gaussian correction with %s' % variant.replace('_', ' '))
     g = s[(s['method'] == 'ruddick2023') & (s['variant'] == 'true_fwhm')].set_index('case')
     ax.plot(x, [100 * g.loc[c, 'reduction'] if c in g.index else np.nan for c in main], 's',
             ms=5, mfc='none', color='#888', label='ruddick2023')

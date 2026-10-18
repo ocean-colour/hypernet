@@ -352,3 +352,79 @@ def test_template_fit_absorber():
     assert r['ok']
     assert r['tau_scale'] == pytest.approx(k, abs=0.05)
     assert r['sigma'] == pytest.approx(sig, abs=0.01)
+
+
+# --- SRF shapes carried by SRFModel (lab data prompts, task 3; Setup Q6, Q14) -------
+def _model(shape='gauss', par=np.nan, c=(2.4, 0.05, 0.02)):
+    return srf.SRFModel(channel='E', coeffs=np.array(c), cov=np.eye(3) * 1e-4,
+                        shape=shape, shape_par=par)
+
+
+def test_template_fit_fixed_shape_par():
+    """With p held at its true value only the width is fitted, and recovered;
+    a starting value alone still lets p move."""
+    rw, rf = _fake_reference()
+    sig, p = 1.05, 2.8
+    x = WAV[(WAV > 470) & (WAV < 530)]
+    y = srf.convolve_kernel(rw, rf, x - 0.02, sig, 'supergauss', p)
+    e = np.full_like(x, 1e-4)
+    r = srf.fit_srf_template(x, y, rw, rf, 490.0, 510.0, err=e, veil=False,
+                             shape='supergauss', shape_par=p, fix_shape_par=True)
+    assert r['ok'] and r['shape_par'] == p and r['shape_par_err'] == 0.0
+    assert r['fwhm'] == pytest.approx(srf.FWHM_PER_SIGMA * sig, abs=0.01)
+    assert r['dlam'] == pytest.approx(0.02, abs=0.01)
+    # p fixed at the wrong value biases the width; the Gaussian (p = 2) reads narrow
+    rg = srf.fit_srf_template(x, y, rw, rf, 490.0, 510.0, err=e, veil=False)
+    assert rg['fwhm'] < r['fwhm']
+    rs = srf.fit_srf_template(x, y, rw, rf, 490.0, 510.0, err=e, veil=False,
+                              shape='supergauss', shape_par=2.3)
+    assert rs['shape_par'] == pytest.approx(p, abs=0.1) and rs['shape_par_err'] > 0
+    with pytest.raises(ValueError):
+        srf.fit_srf_template(x, y, rw, rf, 490.0, 510.0, shape='supergauss',
+                             fix_shape_par=True)
+
+
+def test_supergauss_p2_matrix_equals_gaussian():
+    lam = np.arange(390.0, 700.0, 0.01)
+    grid = WAV[(WAV > 400) & (WAV < 690)]
+    mg = srf.convolution_matrix(lam, grid, _model(), cache=False)
+    ms = srf.convolution_matrix(lam, grid, _model('supergauss', 2.0), cache=False)
+    assert mg.shape == ms.shape and np.array_equal(mg.indptr, ms.indptr)
+    np.testing.assert_allclose(ms.toarray(), mg.toarray(), rtol=0, atol=1e-13)
+
+
+def test_shaped_model_convolution_and_cache():
+    rw, rf = _fake_reference()
+    grid = WAV[(WAV > 480) & (WAV < 520)]
+    g, s = _model(), _model('supergauss', 2.8)
+    assert srf.srf_key(g) != srf.srf_key(s)              # never share a cached matrix
+    yg = srf.convolve_to_grid(rw, rf, grid, g)
+    ys = srf.convolve_to_grid(rw, rf, grid, s)
+    yk = np.array([srf.convolve_kernel(rw, rf, [x], s.sigma(x), 'supergauss', 2.8)[0]
+                   for x in grid])
+    np.testing.assert_allclose(ys, yk, rtol=2e-4)
+    assert np.max(np.abs(ys - yg)) > 1e-3 * np.max(np.abs(yg))
+    # cached matrices are keyed on the shape: the Gaussian one is still Gaussian
+    np.testing.assert_array_equal(srf.convolve_to_grid(rw, rf, grid, g), yg)
+    # a ShapedFWHM is never cached but still convolves with its shape
+    f = srf.ShapedFWHM(s.fwhm, 'supergauss', 2.8)
+    assert srf.srf_key(f) is None
+    np.testing.assert_allclose(srf.convolve_to_grid(rw, rf, grid, f), ys, rtol=1e-12)
+    assert srf.srf_shape(np.ones(3))[0] == 'gauss'      # an array's .shape is not an SRF shape
+    assert srf.srf_shape(2.5)[0] == 'gauss'
+
+
+def test_srfmodel_shape_json_backward_compatible():
+    s = _model('supergauss', 2.75)
+    d = s.to_dict()
+    assert d['shape'] == 'supergauss' and d['shape_par'] == 2.75
+    t = srf.SRFModel.from_dict(d)
+    assert t.shape == 'supergauss' and t.shape_par == 2.75
+    old = {k: v for k, v in _model().to_dict().items() if k not in ('shape', 'shape_par')}
+    o = srf.SRFModel.from_dict(old)                     # JSON from before the shape fields
+    assert o.shape == 'gauss' and np.isnan(o.shape_par)
+    assert srf.SRFModel.from_dict(_model().to_dict()).shape == 'gauss'
+    with pytest.raises(ValueError):
+        _model('supergauss')                            # p missing
+    with pytest.raises(ValueError):
+        _model('lorentz', 1.0)

@@ -175,8 +175,12 @@ def test_grids_and_instrument_srfs():
     assert g['grid_L_122305'].size == 1536
     assert np.nanmedian(g['noise_E_scan']) < 0.02
     s = twin.load_instrument_srfs()
-    for inst in ('HYPSTAR_122304', 'HYPSTAR_122305'):
-        assert set(s[inst]) == {'E', 'Ld'}
+    # E and Ld everywhere; E_sg (the lab super-Gaussian E, lab data prompts task 3)
+    # only where the lab prefers that shape
+    assert set(s['HYPSTAR_122305']) == {'E', 'Ld'}
+    assert set(s['HYPSTAR_122304']) == {'E', 'Ld', 'E_sg'}
+    sg = s['HYPSTAR_122304']['E_sg']
+    assert sg.shape == 'supergauss' and 2.4 < sg.shape_par < 3.1 and s['HYPSTAR_122304']['E'].shape == 'gauss'
     # the narrow-E / E ~ L split of Phase 0 task 8c
     d304 = s['HYPSTAR_122304']['Ld'].fwhm(450) - s['HYPSTAR_122304']['E'].fwhm(450)
     d305 = s['HYPSTAR_122305']['Ld'].fwhm(450) - s['HYPSTAR_122305']['E'].fwhm(450)

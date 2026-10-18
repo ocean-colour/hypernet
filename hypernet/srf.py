@@ -414,7 +414,13 @@ def _none_to_nan(v):
 
 @dataclasses.dataclass
 class SRFModel:
-    """Gaussian SRF of one channel: FWHM(lambda) and a centroid offset.
+    """SRF of one channel: FWHM(lambda), a centroid offset and a shape.
+
+    The shape defaults to Gaussian.  ``shape`` / ``shape_par`` select any
+    :func:`srf_kernel` shape (``'supergauss'`` with exponent p, ``'pvoigt'``
+    with eta) at the same FWHM(lambda); :func:`convolution_matrix` and so
+    :func:`hypernet.edinterp.interpolate_ed_to_l` honour it.  JSON written
+    before the shape fields existed loads as Gaussian.
 
     Attributes:
         channel (str): e.g. ``'E'``, ``'Ld'``, ``'Lu'``.
@@ -430,6 +436,8 @@ class SRFModel:
         instrument (str): instrument id (e.g. ``'HYPSTAR_122304'``).
         frame (str): wavelength scale of ``offset`` (``'air'`` or ``'vac'``).
         meta (dict): free-form provenance (sequence, method, ...).
+        shape (str): one of :data:`SHAPES` (default ``'gauss'``).
+        shape_par (float): the shape parameter (p or eta); NaN for Gaussian.
     """
     channel: str
     coeffs: np.ndarray
@@ -445,10 +453,18 @@ class SRFModel:
     instrument: str = ''
     frame: str = 'air'
     meta: dict = dataclasses.field(default_factory=dict)
+    shape: str = 'gauss'
+    shape_par: float = np.nan
 
     def __post_init__(self):
         self.coeffs = np.asarray(self.coeffs, dtype=float)
         self.cov = np.asarray(self.cov, dtype=float)
+        self.shape = self.shape or 'gauss'
+        if self.shape not in SHAPES:
+            raise ValueError('unknown SRF shape %r' % (self.shape,))
+        self.shape_par = np.nan if self.shape_par is None else float(self.shape_par)
+        if self.shape != 'gauss' and not np.isfinite(self.shape_par):
+            raise ValueError('shape %r needs a finite shape_par' % self.shape)
 
     def fwhm(self, lam):
         """FWHM (nm) at ``lam`` (nm)."""
@@ -670,7 +686,8 @@ _TEMPLATE_KEYS = ['lo', 'hi', 'lam_center', 'sigma', 'sigma_err', 'fwhm', 'fwhm_
 
 
 def fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err=None, veil=True,
-                     sigma0=1.2, via_grid=None, shape='gauss', absorber=None):
+                     sigma0=1.2, via_grid=None, shape='gauss', absorber=None,
+                     shape_par=None, fix_shape_par=False):
     """Fit an SRF by forward-modelling a high-resolution reference.
 
     Model, for pixels in ``[lo, hi]``::
@@ -716,6 +733,12 @@ def fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err=None, veil=True,
         via_grid (np.ndarray, optional): native grid of the observation, nm.
         shape (str): one of :data:`SHAPES`.
         absorber (np.ndarray, optional): optical depth on ``ref_wave``.
+        shape_par (float, optional): starting value of the shape parameter
+            (default 0.1 for the pseudo-Voigt, 2.0 for the super-Gaussian), or
+            its value with ``fix_shape_par``.
+        fix_shape_par (bool): hold the shape parameter at ``shape_par`` (e.g.
+            a laboratory super-Gaussian exponent) and fit only the width,
+            centroid, continuum and veil.  ``shape_par_err`` is then 0.
 
     Returns:
         dict: ``lo, hi, lam_center, sigma, sigma_err, fwhm, fwhm_err, dlam,
@@ -735,8 +758,12 @@ def fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err=None, veil=True,
     out = {k: np.nan for k in _TEMPLATE_KEYS}
     out.update(lo=lo, hi=hi, lam_center=xc, npix=int(x.size), ok=False, shape=shape)
     has_shape = shape != 'gauss'
+    if has_shape and fix_shape_par and (shape_par is None or not np.isfinite(shape_par)):
+        raise ValueError('fix_shape_par needs a finite shape_par')
+    fixed_sp = float(shape_par) if (has_shape and fix_shape_par) else None
+    fit_shape = has_shape and fixed_sp is None
     has_tau = absorber is not None
-    npar = 4 + has_shape + bool(veil) + has_tau
+    npar = 4 + fit_shape + bool(veil) + has_tau
     if x.size < npar + 4 or ref_wave[0] > lo - 6 or ref_wave[-1] < hi + 6:
         return out
     k0 = np.searchsorted(ref_wave, lo - 10.0)
@@ -752,14 +779,14 @@ def fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err=None, veil=True,
             return out
 
     # parameter layout: c0, c1, sigma, dlam, [shape_par], [veil], [k]
-    i_sh = 4 if has_shape else None
-    i_v = 4 + has_shape if veil else None
-    i_k = 4 + has_shape + bool(veil) if has_tau else None
+    i_sh = 4 if fit_shape else None
+    i_v = 4 + fit_shape if veil else None
+    i_k = 4 + fit_shape + bool(veil) if has_tau else None
 
     def conv(xx, p):
         sig, dl = p[2], p[3]
         flux = rf * np.exp(-p[i_k] * tau) if has_tau else rf
-        sp = p[i_sh] if has_shape else None
+        sp = p[i_sh] if fit_shape else fixed_sp
         at = xx if g is None else g
         R = convolve_kernel(rw, flux, at - dl, sig, shape, sp)
         return R if g is None else np.interp(xx, g, R)
@@ -774,7 +801,9 @@ def fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err=None, veil=True,
     p_init = [np.nan, np.nan, sigma0, 0.0]
     lb = [-np.inf, -np.inf, 0.15, -1.0]
     ub = [np.inf, np.inf, 3.5, 1.0]
-    if has_shape:
+    if fit_shape:
+        if shape_par is not None and np.isfinite(shape_par):
+            sh0 = float(np.clip(shape_par, shlo, shhi))
         p_init.append(sh0); lb.append(shlo); ub.append(shhi)
     if veil:
         p_init.append(0.0); lb.append(-0.3); ub.append(0.9)
@@ -806,8 +835,8 @@ def fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err=None, veil=True,
     out.update(sigma=p[2], sigma_err=perr[2], fwhm=FWHM_PER_SIGMA * p[2],
                fwhm_err=FWHM_PER_SIGMA * perr[2], dlam=p[3], dlam_err=perr[3],
                veil=p[i_v] if veil else 0.0, veil_err=perr[i_v] if veil else 0.0,
-               shape_par=p[i_sh] if has_shape else np.nan,
-               shape_par_err=perr[i_sh] if has_shape else np.nan,
+               shape_par=p[i_sh] if fit_shape else (fixed_sp if has_shape else np.nan),
+               shape_par_err=perr[i_sh] if fit_shape else (0.0 if has_shape else np.nan),
                tau_scale=p[i_k] if has_tau else np.nan,
                tau_scale_err=perr[i_k] if has_tau else np.nan,
                c0=p[0], c1=p[1], chi2_nu=chi2_nu, ok=True)
@@ -815,7 +844,8 @@ def fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err=None, veil=True,
 
 
 def fit_template_windows(wav, spec, ref_wave, ref_flux, windows=None, err=None,
-                         veil=True, via_grid=None, shape='gauss', absorber=None):
+                         veil=True, via_grid=None, shape='gauss', absorber=None,
+                         shape_par=None, fix_shape_par=False):
     """:func:`fit_srf_template` over a list of windows.
 
     The table is shaped for :meth:`SRFModel.from_lines` (``lam_air`` = window
@@ -824,7 +854,8 @@ def fit_template_windows(wav, spec, ref_wave, ref_flux, windows=None, err=None,
 
     Args:
         windows (list of (lo, hi)): default :func:`template_windows`.
-        via_grid, shape, absorber: passed to :func:`fit_srf_template`.
+        via_grid, shape, absorber, shape_par, fix_shape_par: passed to
+            :func:`fit_srf_template`.
 
     Returns:
         pd.DataFrame: one row per window.
@@ -833,7 +864,8 @@ def fit_template_windows(wav, spec, ref_wave, ref_flux, windows=None, err=None,
     rows = []
     for lo, hi in windows:
         r = fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err=err, veil=veil,
-                             via_grid=via_grid, shape=shape, absorber=absorber)
+                             via_grid=via_grid, shape=shape, absorber=absorber,
+                             shape_par=shape_par, fix_shape_par=fix_shape_par)
         r['name'] = 'T%03.0f-%03.0f' % (lo, hi)
         rows.append(r)
     df = pd.DataFrame(rows)
@@ -863,24 +895,55 @@ def fwhm_values(fwhm, grid):
     return np.asarray(f, dtype=float)
 
 
+class ShapedFWHM:
+    """A plain FWHM(lambda) callable that also carries an SRF shape.
+
+    Used for Monte Carlo draws of an :class:`SRFModel`'s coefficients: like a
+    plain callable it is never cached (:func:`srf_key` returns None), but
+    :func:`convolution_matrix` still convolves with ``shape``."""
+
+    def __init__(self, fn, shape='gauss', shape_par=np.nan):
+        self.fn, self.shape, self.shape_par = fn, shape or 'gauss', shape_par
+
+    def __call__(self, lam):
+        return self.fn(lam)
+
+
+def srf_shape(spec):
+    """``(shape, shape_par)`` of an SRF spec: an :class:`SRFModel` or
+    :class:`ShapedFWHM` carries one; anything else is Gaussian."""
+    shape = getattr(spec, 'shape', 'gauss') or 'gauss'
+    if not isinstance(shape, str):          # e.g. a numpy array's .shape
+        return 'gauss', np.nan
+    par = getattr(spec, 'shape_par', np.nan)
+    return shape, (np.nan if shape == 'gauss' or par is None else float(par))
+
+
 def srf_key(fwhm):
     """A hashable key for an SRF spec, or None if it cannot be cached (a
-    plain callable: two lambdas may differ while sharing nothing hashable)."""
+    plain callable: two lambdas may differ while sharing nothing hashable).
+    An SRFModel's key includes its shape, so a cached Gaussian matrix is
+    never reused for a super-Gaussian."""
     if isinstance(fwhm, SRFModel):
+        shape, par = srf_shape(fwhm)
         return ('model', np.asarray(fwhm.coeffs, float).tobytes(), float(fwhm.lam_ref),
-                float(fwhm.lam_scale))
+                float(fwhm.lam_scale), shape, par if shape != 'gauss' else None)
     if callable(fwhm):
         return None
     a = np.asarray(fwhm, dtype=float)
     return ('const', float(a)) if a.ndim == 0 else ('array', a.tobytes())
 
 
-def convolution_matrix(lam_hr, grid, fwhm, nsig=5.0, cache=True):
-    """The Gaussian-SRF convolution as a sparse matrix M, so that
-    ``M @ spec_hr`` is :func:`convolve_to_grid`.
+def convolution_matrix(lam_hr, grid, fwhm, nsig=5.0, cache=True, shape=None, shape_par=None):
+    """The SRF convolution as a sparse matrix M, so that ``M @ spec_hr`` is
+    :func:`convolve_to_grid`.
 
-    Row k holds exp(-(lam_hr - grid_k)^2 / 2 sigma_k^2) dlam, truncated at
+    Row k holds the SRF weights at lam_hr - grid_k times dlam, truncated at
     +-``nsig`` sigma and normalised to sum to 1 (so a constant maps to itself).
+    The SRF is Gaussian, exp(-(lam_hr - grid_k)^2 / 2 sigma_k^2), unless the
+    spec carries a shape (:func:`srf_shape`: an SRFModel or ShapedFWHM) or
+    ``shape`` is given; the other shapes use :func:`srf_kernel` at the same
+    FWHM (the pseudo-Voigt's wings are kept to at least +-8 nm).
 
     Parameters
     ----------
@@ -893,8 +956,10 @@ def convolution_matrix(lam_hr, grid, fwhm, nsig=5.0, cache=True):
     nsig : float
         Kernel half-width in sigma.
     cache : bool
-        Reuse a matrix built for the same (lam_hr, grid, fwhm, nsig).  Plain
-        callables are never cached (see :func:`srf_key`).
+        Reuse a matrix built for the same (lam_hr, grid, fwhm, nsig, shape).
+        Plain callables are never cached (see :func:`srf_key`).
+    shape, shape_par : str, float, optional
+        Override the spec's shape (:data:`SHAPES`).
 
     Returns
     -------
@@ -906,24 +971,36 @@ def convolution_matrix(lam_hr, grid, fwhm, nsig=5.0, cache=True):
 
     lam_hr = np.asarray(lam_hr, dtype=float)
     grid = np.asarray(grid, dtype=float)
+    if shape is None:
+        shape, shape_par = srf_shape(fwhm)
+    shape_par = np.nan if shape == 'gauss' or shape_par is None else float(shape_par)
+    if shape not in SHAPES:
+        raise ValueError('unknown SRF shape %r' % (shape,))
     k = srf_key(fwhm) if cache else None
     if k is not None:
         key = (lam_hr.size, lam_hr[0], lam_hr[-1], hash(lam_hr.tobytes()),
-               hash(grid.tobytes()), k, float(nsig))
+               hash(grid.tobytes()), k, float(nsig), shape,
+               None if shape == 'gauss' else shape_par)
         if key in _MATRIX_CACHE:
             _MATRIX_CACHE[key] = _MATRIX_CACHE.pop(key)          # most recent last
             return _MATRIX_CACHE[key]
     sig = fwhm_values(fwhm, grid) / FWHM_PER_SIGMA
+    half = nsig * sig
+    if shape == 'pvoigt':
+        half = np.maximum(half, 8.0)
     dw = np.gradient(lam_hr)
-    lo = np.searchsorted(lam_hr, grid - nsig * sig)
-    hi = np.searchsorted(lam_hr, grid + nsig * sig)
+    lo = np.searchsorted(lam_hr, grid - half)
+    hi = np.searchsorted(lam_hr, grid + half)
     n = hi - lo
     indptr = np.concatenate([[0], np.cumsum(n)])
     cols = np.empty(indptr[-1], dtype=np.int64)
     vals = np.empty(indptr[-1])
     for r in range(grid.size):
         sl = slice(lo[r], hi[r])
-        w = np.exp(-0.5 * ((lam_hr[sl] - grid[r]) / sig[r]) ** 2) * dw[sl]
+        if shape == 'gauss':
+            w = np.exp(-0.5 * ((lam_hr[sl] - grid[r]) / sig[r]) ** 2) * dw[sl]
+        else:
+            w = srf_kernel(lam_hr[sl] - grid[r], sig[r], shape, shape_par) * dw[sl]
         cols[indptr[r]:indptr[r + 1]] = np.arange(lo[r], hi[r])
         vals[indptr[r]:indptr[r + 1]] = w / w.sum() if w.size else w
     M = sparse.csr_matrix((vals, cols, indptr), shape=(grid.size, lam_hr.size))
@@ -934,8 +1011,11 @@ def convolution_matrix(lam_hr, grid, fwhm, nsig=5.0, cache=True):
     return M
 
 
-def convolve_to_grid(lam_hr, spec_hr, grid, fwhm, nsig=5.0, cache=True):
-    """Observe ``spec_hr`` (on ``lam_hr``, nm) with a Gaussian SRF on ``grid``.
+def convolve_to_grid(lam_hr, spec_hr, grid, fwhm, nsig=5.0, cache=True, shape=None,
+                     shape_par=None):
+    """Observe ``spec_hr`` (on ``lam_hr``, nm) with the SRF on ``grid``
+    (Gaussian unless the spec carries a shape or ``shape`` is given; see
+    :func:`convolution_matrix`).
 
     Parameters
     ----------
@@ -958,7 +1038,8 @@ def convolve_to_grid(lam_hr, spec_hr, grid, fwhm, nsig=5.0, cache=True):
         the sample spacing, so a constant maps to the same constant); NaN
         where no high-resolution sample is within the kernel.
     """
-    M = convolution_matrix(lam_hr, grid, fwhm, nsig=nsig, cache=cache)
+    M = convolution_matrix(lam_hr, grid, fwhm, nsig=nsig, cache=cache, shape=shape,
+                           shape_par=shape_par)
     out = M @ np.asarray(spec_hr, dtype=float)
     out[np.diff(M.indptr) == 0] = np.nan
     return out

@@ -8,9 +8,12 @@ irradiance on the native L grid (``whn_l1a.load_l2b``).
   (``srf.fit_template_windows``, veil 0) gives the L SRF directly.
 - **E channel:** ``irradiance`` is E resampled onto the L grid with
   ``np.interp``.  The fit models that resampling (``via_grid`` = the E grid).
-  Only 122304's E grid is known (from the VEIT L1A, IRR cal 2024-11-12); it
-  is used as a proxy for every other instrument and calibration, and those E
-  results are flagged ``e_grid = 'proxy'``.
+  The E grid is each instrument's own, the processor's grid from the lab
+  wavelength polynomials (``hypernet.labcal.grid_for``; lab data prompts
+  task 3), so every row has ``e_grid = 'own'``.  Before that, the 122304 E
+  grid of the VEIT L1A was a proxy for the other instruments (the
+  ``*_pre_lab`` copies of the outputs).  ``--validate`` still uses the VEIT
+  L1A E grid itself, which ``grid_for`` reproduces to 2.5e-5 nm.
 
 **Errors:** L2B carries no per-scan spectra and no per-pixel error for Ld or
 the irradiance (``std_*`` exist only for the reflectances and Lw).  The fits
@@ -43,7 +46,7 @@ import time
 import numpy as np
 import pandas as pd
 
-from hypernet import srf, whn_srf
+from hypernet import labcal, srf, whn_srf
 from hypernet import whn_l1a as wl
 from hypernet.wiggles import FIGDIR, OUT, REPO, WIGGLES_DIR
 from hypernet.wiggles import phase0b_stability as stab
@@ -59,7 +62,8 @@ SLOTS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3
 
 
 def e_grid():
-    """The E grid of HYPSTAR 122304 (IRR cal 2024-11-12), from the VEIT L1A."""
+    """The E grid of HYPSTAR 122304 (IRR cal 2024-11-12), from the VEIT L1A
+    (the ``--validate`` reference)."""
     f = wl.sequence_files(**VEIT)
     return wl.load_l1a_irr(f['L1A_IRR'])['wave']
 
@@ -114,7 +118,10 @@ def validate(ref, gE):
     return v
 
 
-def run(ref, gE, limit=None, verbose=True):
+def run(ref, gE=None, limit=None, verbose=True):
+    """Fit every request row; E through the instrument's own E grid
+    (``labcal.grid_for``).  ``gE`` (one grid for all) is kept only to
+    reproduce the old proxy runs."""
     req = pd.read_csv(REQUEST, dtype=str)
     if limit:
         req = req.groupby('row', group_keys=False).head(limit)
@@ -131,14 +138,13 @@ def run(ref, gE, limit=None, verbose=True):
             sysid = m['system_id']
             cal = '%s/%s' % (m['instrument_calibration_date_rad'],
                              m['instrument_calibration_date_irr'])
-            own = sysid == 'HYPSTAR_122304' and \
-                m['instrument_calibration_date_irr'] == '2024-11-12'
+            grid = labcal.grid_for(sysid, 'E') if gE is None else gE
             keys.update(system_id=sysid, cal_period=cal, sza_l1a=float(np.nanmean(d['sza'])),
-                        e_grid='own' if own else 'proxy',
+                        e_grid='own' if gE is None else 'proxy',
                         instrument_ok=sysid == r['instrument'],
                         cal_ok=cal == r['cal_dates_rad_irr'])
             t, ms = fit_l2(d['wave'], d['downwelling_radiance'][:, 0], d['irradiance'][:, 0],
-                           ref, gE, dict(sequence_id=m['sequence_id'], system_id=sysid))
+                           ref, grid, dict(sequence_id=m['sequence_id'], system_id=sysid))
             temps.append(t.assign(**keys))
             tab = whn_srf.models_table(ms).drop(columns=['instrument'], errors='ignore')
             mods.append(tab.assign(**keys))
@@ -230,7 +236,7 @@ def figure_by_instrument(s, path):
     axs[0].set_ylabel('template SRF FWHM (nm)')
     axs[0].legend(fontsize=9, frameon=False)
     fig.suptitle('Release 2 L2B: SRF per instrument and IRR calibration date '
-                 '(E for instruments other than 122304 post-recal uses a proxy E grid)',
+                 '(E through each instrument\'s own E grid, labcal.grid_for)',
                  fontsize=10, x=0.06, ha='left')
     fig.tight_layout()
     fig.savefig(path, dpi=150)
@@ -252,7 +258,7 @@ def main(argv=None):
     if a.from_parquet:
         models = pd.read_parquet(os.path.join(OUT, 'release2_models.parquet'))
     else:
-        temps, models, status = run(ref, gE, limit=a.limit)
+        temps, models, status = run(ref, limit=a.limit)
         os.makedirs(OUT, exist_ok=True)
         temps.to_parquet(os.path.join(OUT, 'release2_template.parquet'))
         models.to_parquet(os.path.join(OUT, 'release2_models.parquet'))

@@ -13,6 +13,10 @@ Kevin's VEIT sequence (HYPSTAR 122304, 2026-06-04 08:45, SZA 36.7):
    (``hypernet/data/veit_srf_model.json``), Emod from ``emod.emod_for(36.7)``,
    and the per-sequence wavelength-scale corrections of E and Ld (task 4b,
    common window pattern removed; both pass Setup Q8's 0.03 nm).
+   ``srf_labshape`` (lab data prompts task 3) is ``srf`` with the E SRF of
+   the SRF table: super-Gaussian with the lab p and the FWHM(lambda) fitted
+   with that shape (``hypernet/data/veit_srf_model_lab_shape.json``); Ld
+   stays Gaussian.
 3. **Uncertainties** (``edinterp.propagate_ed_to_l``, 200 draws, on the
    time-mean E).  The L1C ``u_rel_*`` are all 0 (the water default is
    ``mcsteps = 0``) and the calibration uncertainties are not in the files,
@@ -48,7 +52,10 @@ from hypernet.wiggles.phase1_twin import LINES10, masks
 
 FIG2 = FIGDIR.replace('phase0', 'phase2')
 VEIT = dict(site='VEIT', seq_time='20260604T0845')
-METHODS = ('linear', 'ruddick2023', 'srf')
+METHODS = ('linear', 'ruddick2023', 'srf', 'srf_labshape')
+#: label -> (edinterp method, E SRF: 'gauss' = veit_srf_model.json, 'lab' = lab shape)
+VARIANTS = {'linear': ('linear', None), 'ruddick2023': ('ruddick2023', 'gauss'),
+            'srf': ('srf', 'gauss'), 'srf_labshape': ('srf', 'lab')}
 MCSTEPS = 200
 
 
@@ -83,6 +90,7 @@ def run():
     chk = l1c_check(irr, rad, l1c, E_t)
     models = srf.load_srf_models(os.path.join(DATA_DIR, 'veit_srf_model.json'))
     sE, sL = models['E'], models['Ld']
+    sE_lab = srf.load_srf_models(os.path.join(DATA_DIR, 'veit_srf_model_lab_shape.json'))['E']
     pattern = srfcal.load_window_pattern()
     mean, e_mean, _ = srf.scan_errors(irr['scans'], flatten_px=whn_srf.FLATTEN_PX)
     scale_E = srfcal.fit_wavelength_scale(irr['wave'], mean, srf=sE, err=e_mean, pattern=pattern)
@@ -99,11 +107,13 @@ def run():
     near, away, per = masks(w)
     res, rows = {}, []
     for m in METHODS:
-        model = m != 'linear'
-        kw = dict(emod=entry, srf_irr=sE, srf_rad=sL) if model else {}
+        meth, which = VARIANTS[m]
+        model = meth != 'linear'
+        kw = dict(emod=entry, srf_irr=sE_lab if which == 'lab' else sE, srf_rad=sL) \
+            if model else {}
         sc = dict(scale_irr=scale_E, scale_rad=scale_L) if model else {}
         ed, info = edinterp.propagate_ed_to_l(
-            irr['wave'], E1, w, method=m, u_rel_random=u_rand, mcsteps=MCSTEPS, seed=42,
+            irr['wave'], E1, w, method=meth, u_rel_random=u_rand, mcsteps=MCSTEPS, seed=42,
             emod_perturbations=pert if model else None, **kw, **sc)
         ratio = Ld / ed
         hp = ratio / median_filter(ratio, size=21, mode='nearest') - 1
@@ -131,7 +141,9 @@ def run():
     meta = dict(snippet_unwired_max_rel_diff=chk['snippet_unwired'],
                 scale_E=(scale_E['shift'], scale_E['stretch'], scale_E['max_err']),
                 scale_L=(scale_L['shift'], scale_L['stretch'], scale_L['max_err']),
-                delta_fwhm=edinterp.delta_fwhm(sE, sL), sza=sza, sza_bin=entry['sza_bin'])
+                delta_fwhm=edinterp.delta_fwhm(sE, sL),
+                delta_fwhm_labshape=edinterp.delta_fwhm(sE_lab, sL), p_lab=sE_lab.shape_par,
+                sza=sza, sza_bin=entry['sza_bin'])
     return w, Ld, res, t, meta
 
 
@@ -141,7 +153,8 @@ def figure(w, Ld, res, meta):
     import matplotlib.pyplot as plt
 
     os.makedirs(FIG2, exist_ok=True)
-    cols = {'linear': '#e34948', 'ruddick2023': '#2a78d6', 'srf': '#1baf7a'}
+    cols = {'linear': '#e34948', 'ruddick2023': '#2a78d6', 'srf': '#1baf7a',
+            'srf_labshape': '#4a3aa7'}
     fig = plt.figure(figsize=(14, 9.5))
     gs = fig.add_gridspec(3, 3, height_ratios=[1.1, 1, 0.9])
     ax0 = fig.add_subplot(gs[0, :])
@@ -197,6 +210,12 @@ def main():
              meta['snippet_unwired_max_rel_diff'][1], meta['snippet_unwired_max_rel_diff'][0]))
     print('scale E shift %+.3f stretch %+.3f (max_err %.3f); L shift %+.3f stretch %+.3f '
           '(max_err %.3f) nm' % (*meta['scale_E'], *meta['scale_L']))
+    print('delta_fwhm: Gaussian E %.3f, lab-shape E %.3f (p %.3f)'
+          % (meta['delta_fwhm'], meta['delta_fwhm_labshape'], meta['p_lab']))
+    lin = t.set_index('method')['line_over_away']
+    for m in METHODS[1:]:
+        print('  %-13s line/away %.3f: %.0f %% of the linear excess removed'
+              % (m, lin[m], 100 * (lin['linear'] - lin[m]) / (lin['linear'] - 1)))
     print(t[['method', 'rms_hp_near_lines', 'rms_hp_away', 'line_over_away', 'u_random_med',
              'u_sys_indep_med', 'u_sys_indep_near_lines_med', 'u_sys_indep_max', 'u_emod_med',
              'u_emod_max', 'n_fallback']].to_string(index=False, float_format='%.4g'))

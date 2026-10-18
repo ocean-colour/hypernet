@@ -84,7 +84,12 @@ def row_for(instrument, channel, date, table=None):
 
 
 def model_from_row(r):
-    """The :class:`hypernet.srf.SRFModel` of a table row."""
+    """The :class:`hypernet.srf.SRFModel` of a table row, with the row's SRF
+    shape (``shape``, ``shape_p``; Gaussian if the table has no such columns),
+    so that :func:`hypernet.edinterp.interpolate_ed_to_l` convolves with it."""
+    shape = r.get('shape', 'gauss')
+    shape = shape if isinstance(shape, str) and shape else 'gauss'
+    par = float(r.get('shape_p', np.nan)) if shape != 'gauss' else np.nan
     c = np.array([r['c0'], r['c1'], r['c2']], dtype=float)
     cov = np.array([[r['cov00'], r['cov01'], r['cov02']],
                     [r['cov01'], r['cov11'], r['cov12']],
@@ -96,7 +101,9 @@ def model_from_row(r):
                            instrument=r['instrument'], frame='air',
                            meta=dict(source=r['source'], cal_period=r['cal_period'],
                                      provisional=bool(r['provisional']),
-                                     n_sequences=int(r['n_sequences'])))
+                                     n_sequences=int(r['n_sequences']),
+                                     shape_source=r.get('shape_source', '')),
+                           shape=shape, shape_par=par)
 
 
 def srf_for(instrument, channel, date, table=None):

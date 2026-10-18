@@ -274,7 +274,8 @@ def rhow_true(scene, srf_L, grid_L):
         :func:`compose_scene`.
     srf_L : float, array, callable or SRFModel
         L-channel FWHM (nm): anything :func:`convolve_to_grid` accepts, or an
-        :class:`hypernet.srf.SRFModel` (its ``fwhm`` is used).
+        :class:`hypernet.srf.SRFModel` (its ``fwhm`` and its SRF shape are
+        used).
     grid_L : array
         L pixel centres, nm.
 
@@ -283,9 +284,10 @@ def rhow_true(scene, srf_L, grid_L):
     numpy.ndarray
         pi Lw_L / Ed_L on ``grid_L``.
     """
+    shape, par = srfmod.srf_shape(srf_L)
     f = srf_L.fwhm if hasattr(srf_L, 'fwhm') else srf_L
-    lw = convolve_to_grid(scene['lam'], scene['Lw'], grid_L, f)
-    ed = convolve_to_grid(scene['lam'], scene['Ed'], grid_L, f)
+    lw = convolve_to_grid(scene['lam'], scene['Lw'], grid_L, f, shape=shape, shape_par=par)
+    ed = convolve_to_grid(scene['lam'], scene['Ed'], grid_L, f, shape=shape, shape_par=par)
     return np.pi * lw / ed
 
 
@@ -309,10 +311,13 @@ def load_grids(path=None):
     """``hypernet/data/hypstar_grids.npz``: the real pixel grids and the VEIT
     per-scan relative noise (written by ``hypernet/wiggles/phase1_instrument.py``).
 
-    Keys: ``grid_E_122304`` (1536), ``grid_L_122304`` (1538),
-    ``grid_L_122305`` (1536), and the relative per-scan noise
-    ``noise_E_scan``, ``noise_Ld_scan``, ``noise_Lu_scan`` on the 122304 grids
-    (flattened scan scatter, Phase 0 Q9).
+    Keys: ``grid_E_<sn>`` and ``grid_L_<sn>`` for the seven instruments
+    (:data:`hypernet.labcal.INSTRUMENTS`), the processor's grids from the lab
+    wavelength polynomials (:func:`hypernet.labcal.grid_for`; e.g.
+    ``grid_E_122304`` 1536 px, ``grid_L_122304`` 1538, ``grid_L_122305``
+    1536), and the relative per-scan noise ``noise_E_scan``,
+    ``noise_Ld_scan``, ``noise_Lu_scan`` on the 122304 grids (flattened scan
+    scatter, Phase 0 Q9).
     """
     d = np.load(path or data_path('hypstar_grids.npz'))
     return {k: d[k] for k in d.files}
@@ -330,7 +335,9 @@ def load_instrument_srfs(path=None):
 
 def observe(lam_hr, spec_hr, grid, srf_model, seed=None, noise=None, true_grid=None,
             dfwhm=0.0):
-    """Observe a high-resolution spectrum with a Gaussian SRF on a pixel grid.
+    """Observe a high-resolution spectrum with the SRF on a pixel grid
+    (Gaussian unless ``srf_model`` carries a shape, e.g. a super-Gaussian
+    SRFModel of the SRF table).
 
     Parameters
     ----------
@@ -340,7 +347,8 @@ def observe(lam_hr, spec_hr, grid, srf_model, seed=None, noise=None, true_grid=N
         The *reported* pixel wavelengths (what the instrument says).
     srf_model : SRFModel, callable, array or float
         The SRF FWHM (nm), as in :func:`convolve_to_grid`; for an
-        :class:`hypernet.srf.SRFModel` its ``fwhm(lambda)`` is used.
+        :class:`hypernet.srf.SRFModel` its ``fwhm(lambda)`` and its shape
+        (``shape``, ``shape_par``) are used.
     seed : int, optional
         RNG seed for the noise.
     noise : float or array, optional
@@ -357,12 +365,13 @@ def observe(lam_hr, spec_hr, grid, srf_model, seed=None, noise=None, true_grid=N
     numpy.ndarray
         The observed spectrum on ``grid``.
     """
+    shape, par = srfmod.srf_shape(srf_model)
     f = srf_model.fwhm if hasattr(srf_model, 'fwhm') else srf_model
     at = grid if true_grid is None else true_grid
     if dfwhm:
         f0 = f
         f = (lambda l: f0(l) + dfwhm) if callable(f0) else np.asarray(f0) + dfwhm
-    obs = convolve_to_grid(lam_hr, spec_hr, at, f)
+    obs = convolve_to_grid(lam_hr, spec_hr, at, f, shape=shape, shape_par=par)
     if noise is not None:
         rng = np.random.default_rng(seed)
         obs = obs * (1.0 + np.asarray(noise) * rng.standard_normal(obs.size))

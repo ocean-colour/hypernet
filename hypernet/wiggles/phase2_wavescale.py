@@ -7,9 +7,11 @@
   widths of ``hypernet/data/veit_srf_model.json``;
 - **Release 2** (the 224 L2B files of ``docs/wiggles_data_request.csv``):
   Ld on its native grid, and E through the E-grid resampling (``via_grid`` =
-  the 122304 E grid, a proxy for every other instrument and calibration, as
-  in Phase 0c).  The SRF widths are those of ``release2_srf_models.json`` for
-  the instrument and IRR calibration.  L2B has no per-pixel errors, so the
+  the instrument's own E grid, ``labcal.grid_for``, as in Phase 0c since lab
+  data prompts task 3; before, the 122304 E grid was a proxy).  The SRF
+  widths are the Gaussian ones of ``release2_srf_models.json`` (channel
+  ``E``, not ``E_sg``) for the instrument and IRR calibration: the window
+  shifts are fitted with a Gaussian kernel.  L2B has no per-pixel errors, so the
   window fits are unweighted (their errors come from the residuals).
 
 **The common window pattern.**  The per-window offsets scatter ~0.13 nm
@@ -49,7 +51,7 @@ import time
 import numpy as np
 import pandas as pd
 
-from hypernet import srf, srfcal, twin, whn_srf
+from hypernet import labcal, srf, srfcal, twin, whn_srf
 from hypernet import whn_l1a as wl
 from hypernet.wiggles import DATA_DIR, OUT, REPO, WIGGLES_DIR
 
@@ -89,7 +91,7 @@ def veit(pattern):
 
 
 def _release2_one(args):
-    r, gE, pattern = args
+    r, pattern = args
     srfs = twin.load_instrument_srfs()
     out = []
     try:
@@ -99,14 +101,14 @@ def _release2_one(args):
         irr_date = m['instrument_calibration_date_irr']
         cal = '%s/%s' % (m['instrument_calibration_date_rad'], irr_date)
         mod = srfs.get('%s@%s' % (sysid, irr_date), srfs.get(sysid))
-        own = sysid == 'HYPSTAR_122304' and irr_date == '2024-11-12'
+        gE = labcal.grid_for(sysid, 'E')
         for ch, spec, via in (('E', d['irradiance'][:, 0], gE),
                               ('Ld', d['downwelling_radiance'][:, 0], None)):
             res, raw = _fit2(d['wave'], spec, mod[ch], pattern, via_grid=via)
             out.append(_row(res, raw, source='Release 2 L2B', instrument=sysid, channel=ch,
                             sequence_time=r['sequence_time'], site_code=r['site'][:-2],
                             cal_period=cal, sza=float(np.nanmean(d['sza'])),
-                            e_grid=('own' if own else 'proxy') if ch == 'E' else 'own'))
+                            e_grid='own'))
     except Exception as ex:
         out.append(dict(source='Release 2 L2B', sequence_time=r['sequence_time'],
                         site_code=r['site'][:-2], flags='error: %s' % ex, ok=False))
@@ -115,14 +117,12 @@ def _release2_one(args):
 
 def release2(workers, pattern, limit=None):
     from multiprocessing import Pool
-    from hypernet.wiggles.phase0c_release2_srf import e_grid
     req = pd.read_csv(REQUEST, dtype=str)
     if limit:
         req = req.head(limit)
-    gE = e_grid()
     rows = []
     with Pool(workers) as pool:
-        for o in pool.imap_unordered(_release2_one, [(r, gE, pattern) for _, r in req.iterrows()]):
+        for o in pool.imap_unordered(_release2_one, [(r, pattern) for _, r in req.iterrows()]):
             rows += o
     return rows
 

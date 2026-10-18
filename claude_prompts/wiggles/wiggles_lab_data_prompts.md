@@ -861,3 +861,235 @@ public repository).  Tasks 3 and 5 were not started.
     instrument" is not the whole processor rule.
   - Not changed in this task: `srf_table.csv`, `hypstar_grids.npz`,
     `release2_srf_models.json`, `wavescale_window_pattern.csv`.
+
+### 2026-10-18 -- Build #3 (Opus 5.5)
+
+Task 3 (revise the SRF table), with the Setup defaults (Q6, Q7, Q8, Q11,
+Q14).  Tasks 4 and 5 were not started; no Phase 3 metric was run and ρw was
+not recomputed.
+
+**Code**
+
+- `hypernet/srf.py`:
+  - `SRFModel` gains `shape='gauss'` and `shape_par=nan`.  JSON written
+    before these fields loads as Gaussian, so the change is
+    backward-compatible.
+  - `ShapedFWHM`: an uncached callable that carries a shape.
+  - `srf_shape(spec)` returns a spec's shape.
+  - `srf_key` includes the shape.
+  - `convolution_matrix` and `convolve_to_grid` use `srf_kernel` for
+    non-Gaussian shapes (`shape=` overrides the spec), and the cache key
+    includes the shape.
+  - `fit_srf_template` and `fit_template_windows` take `shape_par` (a
+    starting value) and `fix_shape_par` (hold p).
+- `edinterp._fwhm_fn` and the snippet's MC `_srf` keep the shape through
+  `ShapedFWHM`, so the MC draws convolve with it.
+- `srftable.model_from_row` reads `shape` / `shape_p`, so `srf_for` and
+  `interpolate_ed_to_l` convolve with the row's shape.
+- `twin.observe` and `rhow_true` honour an SRFModel's shape.  Before, they
+  used only `.fwhm`, and a table SRF was silently observed as a Gaussian.
+- `labcal`:
+  - `lab_shape` (median shape over the clean lines with S/N ≥ 10);
+  - `srf_shape_for` (Q7 class on the processor epoch, p at the physical
+    epoch, L always Gaussian);
+  - constants `CLEAN_LINES` and `SG_CHI2_RATIO = 0.5`.
+- **New scripts:**
+  - `hypernet/wiggles/lab_shape_fits.py`: fixed-p and free-p super-Gaussian
+    E fits, on VEIT L1A and on the 129 Release 2 sequences of 120242,
+    122302 and 122304;
+  - `lab_l2_bias.py`: the bias re-estimate;
+  - `lab_pre_lab_diff.py`: every product against its `_pre_lab` copy.
+    Its outputs go to `$OS_COLOR/.../lab_data/pre_lab_diff/`.
+- **Modified scripts:**
+  - `phase1_instrument.py` (`--grids-only` / `--models-only`): grids for
+    all seven instruments; `E_sg` models;
+  - `phase0c_release2_srf.py` and `phase2_wavescale.py`: own E grids;
+  - `phase2_srf_table.py`: shape and lab columns; the 122303 rule;
+  - `phase2_veit_check.py`: an `srf_labshape` row;
+  - `phase2_shape_check.py`: `lab_E_supergauss` cases and a `shaped`
+    variant.
+
+**Products**, each with its `*_pre_lab` copy kept beside it.  The
+intermediates `release2_{template,models}_pre_lab.parquet` and
+`wavescale_per_sequence_pre_lab.parquet` are kept under `$OS_COLOR`.
+
+1. **`hypstar_grids.npz`.**  It now has `grid_E_<sn>` and `grid_L_<sn>`
+   for all seven instruments, from `labcal.grid_for`.
+   - E has 1539/1538/1538/1538/1537/1536/1535 px and L
+     1540/1538/1538/1539/1538/1538/1536 px (order 120242, 121222, 121231,
+     122302, 122303, 122304, 122305).
+   - The old keys keep their meaning.  `grid_E_122304` changes by at most
+     2.5e-5 nm, `grid_L_122304` by 9e-6 and `grid_L_122305` by 6e-6: the
+     old values were the float32 L1A/L2B wavelengths.  So none is
+     unchanged bit for bit; all agree to float32 precision.
+   - The noise keys are identical.
+   - `grid_L_122305` = 1536 px is correct.
+2. **phase0c** (all 224 sequences OK), own E grid, `e_grid` = `own`
+   everywhere:
+   - Ld is unchanged (Δ = 0), and 122304 is unchanged in both periods.  It
+     already used its own grid; the 2023-01 rows were only mislabelled
+     `proxy`.
+   - The E change in mean FWHM at 400 / 500 / 600 / 700 nm:
+
+     | instrument | period | 400 | 500 | 600 | 700 |
+     |---|---|---|---|---|---|
+     | 120242 | | +0.055 | +0.026 | +0.005 | −0.007 |
+     | 121222 | 2021 | +0.016 | +0.010 | +0.006 | +0.007 |
+     | 121222 | 2025 | +0.017 | +0.012 | +0.010 | +0.010 |
+     | 121231 | | +0.019 | +0.035 | +0.044 | +0.046 |
+     | 122302 | | +0.005 | +0.013 | +0.012 | +0.001 |
+     | 122303 | | −0.004 | −0.015 | −0.022 | −0.023 |
+     | 122305 | | +0.041 | −0.007 | −0.033 | −0.038 |
+
+   - ΔFWHM (Ld − E) at 450 / 600 nm:
+
+     | instrument | period | 450 | 600 |
+     |---|---|---|---|
+     | 120242 | | 0.529 → 0.490 | 0.451 → 0.446 |
+     | 121222 | 2021 | −0.027 → −0.039 | −0.038 → −0.044 |
+     | 121222 | 2025 | +0.002 → −0.012 | −0.010 → −0.019 |
+     | 121231 | | 0.040 → 0.012 | 0.070 → 0.025 |
+     | 122302 | | 0.523 → 0.513 | 0.426 → 0.415 |
+     | 122303 | | −0.013 → −0.003 | 0.033 → 0.055 |
+     | 122305 | | 0.070 → 0.056 | −0.016 → 0.018 |
+
+   - **Why so small:** with `via_grid` the model is evaluated at the grid's
+     own (true) wavelengths and then interpolated, so a wrong E grid changes
+     only the resampling phase, not the wavelength scale.  The proxy's
+     0.15-1.3 nm same-pixel offsets were therefore never a width error of
+     that size.
+3. **`release2_srf_models.json`:**
+   - `e_grid` = `own`; the E FWHMs move as in item 2;
+   - new `E_sg` models (super-Gaussian, p fixed at the lab value) for
+     120242@2024-11 (p 2.527), 122302@2023-01 (2.934), 122304@2023-01
+     (2.757) and 122304@2024-11 (2.805);
+   - `E` stays the Gaussian fit, which the twin and wavescale use.
+4. **New `hypernet/data/veit_srf_model_lab_shape.json`** (VEIT L1A E,
+   p 2.805, fixed).  FWHM at 400 / 550 / 850 nm is 2.614 / 2.501 / 2.863
+   nm, against 2.346 / 2.212 / 2.552 for the Gaussian.  The free-p median
+   is 2.544 (27 windows), and χ²_ν is the same (3.59 vs 3.60).
+5. **`wavescale_window_pattern.csv`** changes by ≤ 0.0025 nm per window
+   (rms 0.133 nm, correlation 0.79 as before).  The E scale medians
+   (`phase2_wavescale.csv`) move ≤ 0.003 nm.  The proxy did not feed the
+   common pattern.
+6. **`srf_table.csv`**, E rows.  The Ld FWHMs are unchanged, and the scale
+   columns move ≤ 0.01.
+
+   | row | shape (p) | fwhm_550 old → new (Gaussian-equivalent) | ΔFWHM old → new (shaped) | method |
+   |---|---|---|---|---|
+   | 120242 2024-11 | sg 2.527 | 2.190 → 2.363 (2.226) | 0.390 → 0.353 (0.215) | srf |
+   | 121222 2021-10 | gauss | 2.658 → 2.661 | −0.054 → −0.057 | linear |
+   | 121222 2025-03 | gauss | 2.713 → 2.735 | −0.025 → −0.047 | linear |
+   | 121231 2021-10 | gauss | 2.791 → 2.839 | 0.082 → 0.035 | linear |
+   | 122302 2023-01 | sg 2.934 | 2.161 → 2.469 (2.188) | 0.464 → 0.438 (0.156) | srf |
+   | 122303 2023-01 | gauss | 2.613 → 2.576 | 0.138 → **0.173** | **linear, from the lab** |
+   | 122304 2023-01 R2 | sg 2.757 | 2.278 → 2.518 (2.278) | 0.491 → 0.491 (0.240) | srf |
+   | 122304 2024-11 R2 | sg 2.805 | 2.342 → 2.609 (2.342) | 0.390 → 0.390 (0.123) | srf |
+   | 122304 2024-11 VEIT | sg 2.805 | 2.212 → 2.501 (2.212) | 0.477 → 0.477 (0.189) | srf |
+   | 122305 2023-01 | gauss | 2.691 → 2.674 | 0.011 → 0.026 | linear |
+
+   - New columns: `shape`, `shape_p`, `shape_source` (= `lab`),
+     `shape_p_field`, `fwhm_gauss_550`, `lab_epoch`,
+     `lab_minus_table_{405,436,546}`, `lab_fwhm_def`,
+     `delta_fwhm_shaped`, `lab_dfwhm`, `method_lab`, `method_from`.
+   - `shape_p_field` (free-p median): 120242 2.514, 122302 2.856, 122304
+     2.505 (2023-01), 2.430 (2024-11 R2), 2.544 (VEIT).  This is below the
+     lab p on 122304.
+   - Lab validation (like with like, 436 / 546 nm), for the super-Gaussian
+     E rows:
+
+     | row | 436 nm | 546 nm |
+     |---|---|---|
+     | 120242 | −0.026 | −0.043 |
+     | 122302 | −0.014 | +0.018 |
+     | 122304 2023 | −0.080 | −0.003 |
+     | 122304 2024-11 R2 | −0.128 | −0.087 |
+     | 122304 VEIT | −0.065 | +0.021 |
+
+     Gaussian E rows: −0.05 to +0.13; Ld rows: −0.08 to +0.05.
+- **122303 verdict: it does not come out `linear` from the data.**  With
+  its own E grid, its Gaussian E narrows by 0.02-0.04 nm and ΔFWHM rises
+  from 0.138 to 0.173, which is above the 0.15 threshold.  The lab ΔFWHM is
+  −0.024, so the method is set from the lab, with a note and
+  `method_from = lab`.  `method_sensitive` is True, because the L1A-bias
+  estimate says `srf`.  This is the only row where data and lab disagree.
+- **A decision JXP should review: G1 on a shaped row uses the
+  Gaussian-equivalent ΔFWHM.**
+  - The FWHM of a flat-topped E is 0.25-0.30 nm larger than its
+    Gaussian-equivalent width.
+  - Taken literally, ΔFWHM from the shaped FWHM (`delta_fwhm_shaped`)
+    flips 122304 @ 2024-11 R2 to `linear` (0.123) and leaves 122302 at
+    0.156.  The lab says 0.39-0.47 for both.
+  - G1's 0.15 nm threshold was set with Gaussian SRFs, and the lab's
+    quoted FWHM behaves like a Gaussian-fit width: lab − our Gaussian refit
+    ≈ −0.05 nm, lab − our super-Gaussian refit ≈ −0.15 nm at 546 E.  So
+    `delta_fwhm` (and `method`) use the Gaussian template E, while the
+    convolution uses the shaped SRF.
+  - For the same reason, the lab-validation column compares a
+    super-Gaussian row with our super-Gaussian refit of the lamp lines
+    (`fwhm_sg`), not the lab's quoted value.  Compared with the quoted
+    value, the shaped rows read 0.13-0.25 nm too wide.
+- **The "E from L2 reads 0.06-0.09 nm wide" bias, re-estimated**
+  (`lab_l2_bias.csv`, Hg 436 / 546; bias = (field − lab)_E − (field − lab)_L):
+  - The median over the 9 Release 2 models is −0.055 nm with own grids
+    (−0.061 with the proxy).  This is the opposite sign to the claim.
+  - The lab's FWHM definition alone gives −0.048 (lab − our Gaussian refit,
+    E minus L).  The residual, −0.007 nm, is consistent with zero.
+  - **The lamp shows no L2 inflation of E.**  The +0.064 nm of
+    `phase0c_validation` is the single VEIT sequence's L2-vs-L1A
+    difference, and VEIT's L1A Gaussian E reads narrow against the lamp
+    (−0.129).
+  - `delta_fwhm_l1a_est` is kept as that one-sequence estimate, with a note
+    in the docstring.  Whether to drop it, and so `method_sensitive`, is
+    JXP's call.
+- **How much of srf's gain remains:**
+  - **Twin** (`phase2_shape_check.csv`, 25 scenes, 122304 grids; truth E
+    super-Gaussian p 2.805, L Gaussian):
+    - a Gaussian correction keeps 63 % (fitted widths) or 49 % (true FWHM);
+    - with ΔFWHM 0.2 that falls to 45 % / 27 %;
+    - a correction that knows the E shape (`shaped`) keeps 100 % in both
+      cases.
+    - Lab p and an L that stays Gaussian are thus worse for a Gaussian
+      correction than task 9b's 76-84 % / 66-78 %.  The old cases
+      reproduce exactly.
+  - **VEIT** (`phase2_veit_check.csv`; line-region residual over the
+    away-from-line level, 1 = no excess):
+    - linear 2.45, srf (Gaussian) 1.60 (59 % of the excess removed),
+      `srf_labshape` 2.54 (−6 %).
+    - By line, the lab shape improves the solar lines further: Ca K 0.0090
+      → 0.0087, Ca H 0.0076 → 0.0071, G band 0.0088 → 0.0075, Mg b 0.0037
+      → 0.0025, Hα 0.0033 → 0.0029.
+    - It makes the O₂ bands much worse: O₂-A 0.0076 → 0.0198, O₂-B 0.0028
+      → 0.0048.  Na D is also worse (0.0025 → 0.0031).
+    - The free-p field fit prefers p ≈ 2.5, against the lab's 2.8.  The
+      O₂-A result says the lab p is too flat for sunlight on this unit, or
+      that the shape interacts with Emod's saturated band.  This needs
+      looking into before `srf_labshape` is the default.
+- **Tests:** `pytest -q` gives **151 passed** (144 before).
+  - New tests:
+    - `test_srf.py`: fixed and starting p; super-Gaussian p = 2 matrix =
+      Gaussian (atol 1e-13); shaped convolution and cache keys; JSON
+      backward compatibility;
+    - `test_labcal.py`: npz = `grid_for` to 1e-9 nm; the shape classes;
+    - `test_srftable.py`: the rows carry the lab shape.
+  - Updated tests:
+    - `test_srftable.py::test_table_contents`: G1 now holds except where
+      `method_from = lab` (122303);
+    - `test_srftable.py::test_method_for_matches_the_rule`:
+      `choose_method` on a shaped E is no longer G1, so the test checks
+      `delta_fwhm` against `method_for`;
+    - `test_twin.py`: 122304 now has `E_sg`.
+  - `test_snippets::test_phase1_scene_through_the_snippet` failed until
+    `twin.observe` honoured the shape.  It passes without being changed.
+- **Not re-run:** `phase0c --validate` (the VEIT grid is unchanged) and
+  `phase0d_refine`.  Phase 0d reads `release2_template.parquet`; its
+  committed CSVs are from the pre-lab parquet.  Nothing that is Phase 1
+  only was re-run.
+- **Learned:**
+  - The proxy E grid hardly mattered: the E widths move ≤ 0.055 nm and the
+    scales ≤ 0.003 nm.
+  - The real consequences of the lab data are the 122303 class and the
+    shape.
+  - Holding p at the lab value is consistent with the lamp when like is
+    compared with like.  But on VEIT it buys solar-line gains at the cost of
+    O₂-A.

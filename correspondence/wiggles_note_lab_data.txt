@@ -62,5 +62,15 @@ Questions
    calibration files?  The remaining checks, and the before-and-after test
    on real data, depend on them.
 
+6. Which lines did you fit for the wavelength polynomials?  We have
+   assumed all the lines listed in deltawl_vnir.dat for each epoch.
+
+A note on the data: I have committed two tables derived from your files
+to our hypernet repository, whose documentation is public.  They hold
+the polynomial coefficients of every epoch and the lab FWHM at each lamp
+line, with our own refits of the line shapes.  The raw files themselves
+are not in the repository.  If you would rather these tables were not
+public, please tell me and I will take them down.
+
 Best regards,
 Xavier

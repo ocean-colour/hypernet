@@ -1752,3 +1752,15 @@ and the figure is `figs/phase0/phase0d_telluric_shape.png`.
   - New `test_emod.py`: columns; O₂-A saturated cores and band mean;
     air-mass dependence (Tier 2).
 - `pytest -q`: 71 passed.
+
+### 2026-10-18 -- Task 13, lab half (Opus 5.5, from `wiggles_lab_data_prompts.md` task 2)
+
+- **The lab half of task 13 is done.**  Joel's lab wavelength-calibration
+  data (7 instruments, 13 epochs) are read by the new `hypernet/labcal.py`.
+  They are tabled in `hypernet/data/lab_wl_coefs.csv` and
+  `hypernet/data/lab_srf.csv`, and compared with `srf_table.csv` in
+  `hypernet/wiggles/lab_fwhm_compare*.csv`.  Details are in the "Build #2"
+  Log of `wiggles_lab_data_prompts.md`.
+- **The cal-file half is still open.**  The `HYPERNETS_CAL_HYPSTAR_*_{RAD,IRR}_v2.3.nc`
+  files have still not arrived, so `phase0b_calfiles.py` has nothing to
+  open.

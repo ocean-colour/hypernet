@@ -1093,3 +1093,158 @@ intermediates `release2_{template,models}_pre_lab.parquet` and
   - Holding p at the lab value is consistent with the lamp when like is
     compared with like.  But on VEIT it buys solar-line gains at the cost of
     O₂-A.
+
+### 2026-10-18 -- Build #4 (Opus 5.5)
+
+Task 4 (the common window pattern vs the lab polynomial residual), with
+Setup Q13's default.  Task 5 was not started, and no Phase 3 metric was run.
+
+**Method** (new `hypernet/wiggles/lab_window_pattern.py`; module docstring):
+
+- **Sign.**  The processor grid is the lab polynomial, so at a lamp line
+  `resid` = poly(mu) − λ_ref is the reported-minus-true error r of the
+  pixel that sees the line.  The field pattern is −dlam, so the lab
+  prediction of the pattern is −r.
+- **Detrending.**  The field pattern is a residual about each sequence's
+  shift + stretch line, so the lab curve is compared after removing a
+  straight line over the same 27 windows.
+- **Between lines**, only the Q13 transfer is used, in two variants:
+  - **v1** (Q13's default): r = poly_std − poly_all for the standard-set
+    instruments (13 lines), the mean over 121222 and 121231 2021_07.  It is
+    0 between lines for the Kr instruments.
+  - **v2** (the Q13 lead): truth = the 4th-order fit *without Xe*.  Then
+    r = poly_std − poly_noXe for the standard-set instruments, and
+    poly_all − poly_noXe for the Kr ones.
+  - The curves agree between instruments and channels to ≤ 0.005 nm (v1)
+    and ≤ 0.012 nm (v2), which justifies the transfer (Q13's ±0.01).
+
+**Refits of the Kr epochs.**  Unweighted 4th order through our line
+centres; the file polynomials equal the all-line fit to ≤ 0.015 nm.
+
+| epoch | all lines | no Kr | no Xe |
+|---|---|---|---|
+| 121222 L / E | 0.068 / 0.064 (19) | 0.073 / 0.068 (13) | **0.028 / 0.029** (14) |
+| 121231 L / E | 0.061 / 0.071 | 0.066 / 0.077 | **0.026 / 0.027** |
+| 120242 2020_09 L / E (has no Xe) | 0.028 / 0.026 (14) | 0.019 / 0.012 (8) | n/a |
+
+Values are rms residuals in nm, with the number of lines in brackets.
+`sigma` = sqrt(Σr²/(n−5)) is 0.071-0.098 (all, no Kr) and 0.032-0.037 (no
+Xe).
+
+- Residuals at 405 / 546 nm: all lines +0.11 / −0.08 (both Kr epochs);
+  no Kr +0.09 / −0.10; no Xe +0.045 / −0.04.
+- The no-Xe fit cannot reach Xe 1083.8 (+0.57 to +0.69 nm when
+  extrapolated).  It is valid over 297-1014 nm.
+
+**The Q13 lead: confirmed in part.**
+
+- Dropping Kr barely changes the fit.  Dropping Xe cuts the rms from
+  0.061-0.071 to 0.026-0.029 nm.  So the ±0.09 nm "common residual" is a
+  4th-order fit spanning 297-1084 nm with the Xe 823-1084 lines, not
+  instrument physics.
+- It is still a real error of the processor's grid, because the processor
+  uses that polynomial.
+- **120242 2020_09** (fitted without Xe, σ 0.03) against 2024_05 (Xe,
+  σ 0.09): the same-pixel difference poly_2024_05 − poly_2020_09 is
+  +0.019 at 405, −0.083 at 546, −0.107 at 600, −0.091 at 700 and +0.022
+  at 882 nm (L).  It has the shape of the v2 curve: rms 0.059, falling to
+  0.030 after subtracting v2 but only to 0.053 after v1.  The 2020→2022
+  "polynomial drift" of 120242 (−0.09 nm at 550-700) is thus mostly the
+  line-set change, not the instrument moving.
+- **Not all of it.**  Even without Xe, every Kr epoch keeps about +0.045 nm
+  at Hg 404.66 and −0.04 at 546.07.  The 404.66 part is plausibly its blend
+  with Hg 407.78, which pulls the centroid red.  So no-Xe is a better
+  "truth", but not the truth.
+
+**Pattern rms before and after** (nm, over 27 windows; Ld = lab L):
+
+| group | before | after v1 | after v2 | variance removed v1 / v2 | corr v2 |
+|---|---|---|---|---|---|
+| 120242 E / Ld | 0.102 / 0.134 | 0.100 / 0.132 | 0.082 / 0.119 | 5 / 37 %, 2 / 21 % | 0.64 / 0.47 |
+| 121222 E / Ld | 0.135 / 0.147 | = | 0.120 / 0.137 | 0 / 20 %, 0 / 13 % | 0.46 / 0.36 |
+| 121231 E / Ld | 0.153 / 0.128 | = | 0.148 / 0.126 | 0 / 7 %, 0 / 4 % | 0.27 / 0.24 |
+| 122302 E / Ld | 0.104 / 0.136 | 0.102 / 0.135 | 0.085 / 0.124 | 4 / 34 %, 2 / 18 % | 0.60 / 0.43 |
+| 122303 E / Ld | 0.153 / 0.131 | 0.152 / 0.129 | 0.146 / 0.119 | 2 / 9 %, 3 / 18 % | 0.31 / 0.43 |
+| 122304 E / Ld | 0.100 / 0.127 | 0.098 / 0.125 | 0.087 / 0.118 | 4 / 23 %, 2 / 13 % | 0.49 / 0.36 |
+| 122305 E / Ld | 0.139 / 0.154 | 0.137 / 0.153 | 0.124 / 0.138 | 2 / 20 %, 2 / 20 % | 0.46 / 0.47 |
+| common | 0.119 | 0.117 | 0.106 | 2.5 / 21 % | 0.46 |
+
+**Line by line**, common pattern: field / lab −r (raw line residual, no
+interpolation) / v2 about its line, in nm:
+
+| window | field | lab −r | v2 about its line | |
+|---|---|---|---|---|
+| 405 | +0.035 | −0.087 | −0.057 | **opposite sign** |
+| 435 | −0.081 | −0.023 | −0.041 | **lab too small** |
+| 545 | +0.108 | +0.093 | +0.037 | agree |
+| 585 | +0.053 | +0.077 (Kr instruments) | +0.052 | agree |
+| 855 | −0.084 | −0.033 (Kr) | −0.107 | |
+
+- Every instrument has the same signs at 405 and 435; there field and lab
+  disagree everywhere.
+- At the windows where the pattern is largest, the lab is nowhere near:
+
+  | window | field | v2 |
+  |---|---|---|
+  | 415 | −0.197 | −0.052 |
+  | 505 | −0.226 | +0.012 |
+  | 605 | +0.245 | +0.055 |
+  | 665 | −0.184 | +0.045 |
+
+  No lab line lies near these windows, and the lab residual is a difference
+  of 4th-order polynomials.  It is smooth, and cannot make ±0.2 nm
+  window-to-window structure.
+
+**Verdict on Phase 2 open concern #1: partly resolved, and mostly not.**
+
+- The lab polynomial explains a smooth, low-order part of the pattern.  It
+  is real, and largest near 545-605 and 855 nm: about 20 % of the variance
+  with the no-Xe variant (up to 37 % on 120242 E), and 2-5 % with Q13's
+  default.  It also explains why the pattern is common to every instrument:
+  all of them share one fitting recipe and line set.
+- It does not explain the ±0.2 nm window-to-window structure (415, 505,
+  605, 665 nm), which carries ~80 % of the variance.  Nor does it explain
+  the sign at 405 nm or the size at 435 nm.
+- That structure is still unexplained.  It is not the SRF shape (task 9b),
+  not HSRS line positions, not the E grid (task 3: the pattern moved
+  ≤ 0.0025 nm), and not the lab polynomial.
+
+**srfcal option: not added.**
+
+- Under Q13's default the lab residual removes 2.5 % of the common
+  pattern's variance, which is not significant; under v2, 21 %.
+- The empirical pattern already contains that component, so a
+  `load_window_pattern(source='lab')` option would replace a correction
+  that works with a weaker one.
+- `phase2_wavescale.py` was not re-run, and `wavescale_window_pattern.csv`
+  is unchanged.  It still has its task-3 `_pre_lab` copy only; no new copy
+  was needed.
+- The useful product of this task for the processor side is the lead
+  itself: a fit without Xe, or a better pixel → λ model, would remove the
+  smooth ~0.05-0.1 nm error from the processor grid.  That is for the note
+  to Joel.
+
+**Products:**
+
+- new `hypernet/wiggles/lab_window_pattern.py`;
+- `lab_window_pattern.csv` (per window × group: field, lab line, v1 and v2
+  raw and detrended, after);
+- `lab_window_pattern_summary.csv` (the rms table and the at-window values);
+- `figs/lab/window_pattern_vs_lab.png`.  Panels: (a) field vs lab;
+  (b) the refits; (c) the 120242 transfer test;
+- intermediates in `$OS_COLOR/hypernet/wiggles/lab_data/window_pattern/`
+  (`kr_refits.csv`, `transfer_curves.csv`, `transfer_test_120242.csv`,
+  `run.log`).
+
+**Tests:** no package code changed, so no tests were added.  `pytest -q`:
+151 passed.
+
+**Learned:**
+
+- The same-pixel "drift" between lab epochs mixes instrument change with
+  line-set change.  On 120242, most of the 2020→2022 polynomial change is
+  the switch from a Kr to a Xe lamp.  This qualifies the "≤ 0.10 nm
+  polynomial stability" of the Context; the instrument moved less than
+  that.
+- A line-set refit that matches Joel's files needs no weights:
+  `file_minus_fit_max` is ≤ 0.015 nm for the all-line refits.

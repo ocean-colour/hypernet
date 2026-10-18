@@ -1,0 +1,69 @@
+{
+  "meta": {
+    "source": "VEIT L1A (122304, IRR 2024-11-12)",
+    "note": "E SRF with the lab super-Gaussian shape (Setup Q6 (c)); Ld/Lu are Gaussian: veit_srf_model.json",
+    "script": "hypernet/wiggles/lab_shape_fits.py"
+  },
+  "models": {
+    "E": {
+      "channel": "E",
+      "coeffs": [
+        2.506625770467533,
+        0.03355697927827028,
+        0.043534349605333755
+      ],
+      "cov": [
+        [
+          0.0035600516859155707,
+          0.0005634743677075302,
+          -0.0007097123028417219
+        ],
+        [
+          0.0005634743677075309,
+          0.0003289571841178168,
+          -5.184089267013891e-05
+        ],
+        [
+          -0.0007097123028417215,
+          -5.184089267013868e-05,
+          0.00019885820817253514
+        ]
+      ],
+      "offset": 0.06271769844222515,
+      "offset_err": 0.018796848362114257,
+      "lam_min": 395.0,
+      "lam_max": 865.0,
+      "lam_ref": 600.0,
+      "lam_scale": 100.0,
+      "chi2_nu": 21.339972229233464,
+      "npts": 27,
+      "instrument": "HYPSTAR_122304",
+      "frame": "air",
+      "meta": {
+        "site": "VEIT",
+        "sequence_id": "SEQ20260604T084543",
+        "system_id": "HYPSTAR_122304",
+        "cal_date_irr": "2024-11-12",
+        "cal_date_rad": "2024-11-08",
+        "sza": 36.6702,
+        "channel": "E",
+        "method": "template, super-Gaussian with p fixed at the lab value",
+        "veil": false,
+        "shape_source": "lab",
+        "lab_epoch": "2024_09",
+        "shape_p_field": 2.5437119156268553,
+        "shape_p_field_n": 27,
+        "gauss_fwhm": {
+          "400": 2.3457631036247584,
+          "450": 2.2787414607827614,
+          "550": 2.2121307314762664,
+          "700": 2.2807960284602715,
+          "850": 2.551758994576774
+        },
+        "script": "hypernet/wiggles/lab_shape_fits.py"
+      },
+      "shape": "supergauss",
+      "shape_par": 2.804709
+    }
+  }
+}

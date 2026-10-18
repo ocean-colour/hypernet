@@ -1,0 +1,1045 @@
+"""Spectral response functions (SRFs) of hyperspectral radiometers from solar
+and telluric lines.
+
+The SRF of each channel is parameterised as a Gaussian whose FWHM varies
+smoothly with wavelength.  This module measures it from the data: every line
+in :data:`LINES` is fitted with a Gaussian absorption profile on a linear
+continuum, which gives a centroid (wavelength calibration) and a width
+(resolution) per line.  :func:`fit_fwhm_model` then fits a quadratic
+FWHM(lambda) to the line widths of one channel, and :class:`SRFModel` holds
+the result (with the channel's mean centroid offset) and reads and writes it
+as JSON.
+
+A fitted Gaussian measures the SRF convolved with the line's intrinsic
+profile, not the SRF itself.  Blends and bands (Ca H/K, G band, Mg b, Na D,
+O2) therefore give widths biased high.  The bias is common to the E and L
+channels of one instrument, so the empirical fits here are good for relative
+tests (E vs L, stability).  An absolute SRF needs a forward-model fit against
+a high-resolution solar spectrum.
+
+Wavelengths are in nm.  Laboratory wavelengths are given in air, with vacuum
+values from :func:`air_to_vac`; which scale the HYPSTAR calibration uses is
+not yet known.
+"""
+
+import dataclasses
+import json
+import os
+
+import numpy as np
+import pandas as pd
+from scipy.optimize import curve_fit
+
+#: FWHM / sigma for a Gaussian, 2 sqrt(2 ln 2).
+FWHM_PER_SIGMA = 2.0 * np.sqrt(2.0 * np.log(2.0))
+
+
+def air_to_vac(lam_air):
+    """Convert air wavelengths (nm) to vacuum (nm).
+
+    Uses the inverse of the Morton (2000) / Ciddor (1996) dispersion relation,
+    as in VALD (N. Piskunov).  At 656.281 nm (air) this gives 656.461 nm.
+
+    Args:
+        lam_air (float or array): air wavelength(s) in nm.
+
+    Returns:
+        float or np.ndarray: vacuum wavelength(s) in nm.
+    """
+    lam_air = np.asarray(lam_air, dtype=float)
+    s2 = (1e3 / lam_air) ** 2  # (1 / lambda[um])^2
+    n = (1.0 + 8.336624212083e-5 + 2.408926869968e-2 / (130.1065924522 - s2)
+         + 1.599740894897e-4 / (38.92568793293 - s2))
+    return lam_air * n
+
+
+def vac_to_air(lam_vac):
+    """Convert vacuum wavelengths (nm) to air (nm): the inverse of
+    :func:`air_to_vac`, by fixed-point iteration (converges to < 1e-9 nm in
+    three steps).
+
+    Args:
+        lam_vac (float or array): vacuum wavelength(s) in nm.
+
+    Returns:
+        float or np.ndarray: air wavelength(s) in nm.
+    """
+    lam_vac = np.asarray(lam_vac, dtype=float)
+    lam = lam_vac.copy()
+    for _ in range(4):
+        lam = lam - (air_to_vac(lam) - lam_vac)
+    return lam
+
+
+# The line list.  Columns:
+#   name        -- label
+#   lam_air     -- laboratory (or nominal band) wavelength in air, nm
+#   half        -- half-width of the fit window, nm
+#   group       -- lines sharing a group are fitted jointly on one window
+#   blend       -- the feature is itself a blend or band, so neither its
+#                  absolute centroid nor its width is a clean SRF probe
+#   use_for_srf -- enters the FWHM(lambda) fit
+_LINE_ROWS = [
+    # name          lam_air   half  group    blend  use_for_srf
+    ('Ca K',        393.366,  4.0, 'CaHK',   True,  True),
+    ('Ca H',        396.847,  4.0, 'CaHK',   True,  True),   # + H epsilon 397.0
+    ('G band',      430.79,   4.0, 'G',      True,  True),   # CH band
+    ('H beta',      486.133,  4.0, 'Hb',     False, True),
+    ('Mg b',        517.27,   4.0, 'Mgb',    True,  True),   # 516.7/517.3/518.4
+    ('Na D',        589.29,   4.0, 'NaD',    True,  True),   # 589.0/589.6
+    ('H alpha',     656.281,  4.0, 'Ha',     False, True),
+    ('O2 B',        687.0,    4.0, 'O2B',    True,  False),  # band
+    ('O2 A',        760.6,    4.0, 'O2A',    True,  False),  # band
+    ('Ca II 849.8', 849.802,  4.0, 'CaIR12', False, True),   # jointly with 854.2
+    ('Ca II 854.2', 854.209,  4.0, 'CaIR12', False, True),
+    ('Ca II 866.2', 866.214,  4.0, 'CaIR3',  False, True),
+    ('H2O',         936.5,    4.0, 'H2O',    True,  False),  # band, diagnostic
+]
+
+#: The line table (see the comments above ``_LINE_ROWS`` for the columns).
+LINES = pd.DataFrame(_LINE_ROWS, columns=['name', 'lam_air', 'half', 'group',
+                                          'blend', 'use_for_srf'])
+LINES.insert(2, 'lam_vac', air_to_vac(LINES['lam_air'].values))
+
+#: Keys of one fitted component, in output order.
+_FIT_KEYS = ['mu', 'mu_err', 'sigma', 'sigma_err', 'fwhm', 'fwhm_err',
+             'depth', 'depth_err', 'c0', 'c0_err', 'c1', 'c1_err',
+             'chi2_nu', 'npix', 'ok']
+
+
+def flatten_scans(scans, axis=1, smooth_px=20.0):
+    """Remove a smooth multiplicative change of each scan relative to the mean.
+
+    Each scan is divided by a Gaussian-smoothed (``smooth_px`` pixels, along
+    wavelength) version of its ratio to the mean spectrum.  This takes out
+    broadband changes between scans (sky brightness, glint, pointing) while
+    keeping pixel-to-pixel noise and line-scale changes (a few pixels).
+
+    Args:
+        scans (np.ndarray): spectra, with scans along ``axis``.
+        axis (int): the scan axis.
+        smooth_px (float): Gaussian sigma of the smoothing, pixels.
+
+    Returns:
+        np.ndarray: the flattened scans, same shape as ``scans``.
+    """
+    from scipy.ndimage import gaussian_filter1d
+    scans = np.moveaxis(np.asarray(scans, dtype=float), axis, -1)
+    with np.errstate(invalid='ignore', divide='ignore'):
+        ratio = scans / np.nanmean(scans, axis=-1, keepdims=True)
+    ratio = np.where(np.isfinite(ratio), ratio, 1.0)
+    smooth = gaussian_filter1d(ratio, smooth_px, axis=0, mode='nearest')
+    return np.moveaxis(scans / smooth, -1, axis)
+
+
+def scan_errors(scans, axis=1, flatten_px=None):
+    """Mean spectrum and its per-pixel uncertainty from repeated scans.
+
+    L1A files carry no uncertainty variables (and the L1C ``u_rel_random_*``
+    are zero), so the scan-to-scan scatter is the noise estimate.  With ``s``
+    the sample standard deviation (``ddof=1``) over N scans:
+
+    - the error of the mean spectrum is ``s / sqrt(N)``;
+    - the error of a single scan is ``s``.
+
+    The raw scatter is dominated by broadband changes between scans (in the
+    VEIT sample 5-6 % in Lu and Ld against 0.4-0.8 % pixel noise; see
+    ``hypernet/wiggles/phase0a_l1c_consistency.py``).  With ``flatten_px`` the scatter
+    is taken from :func:`flatten_scans` instead, which is the right noise for
+    a line fit on a free continuum.  The mean is always that of the raw scans.
+
+    Args:
+        scans (np.ndarray): spectra, with scans along ``axis``.
+        axis (int): the scan axis.  L1A arrays are (wavelength, scan), hence 1.
+        flatten_px (float, optional): smoothing sigma (pixels) for
+            :func:`flatten_scans`; None uses the raw scatter.
+
+    Returns:
+        tuple: (mean, err_mean, err_scan), each along wavelength.
+    """
+    scans = np.asarray(scans, dtype=float)
+    n = np.sum(np.isfinite(scans), axis=axis)
+    mean = np.nanmean(scans, axis=axis)
+    work = scans if flatten_px is None else flatten_scans(scans, axis, flatten_px)
+    with np.errstate(invalid='ignore', divide='ignore'):
+        s = np.nanstd(work, axis=axis, ddof=1)
+        return mean, s / np.sqrt(n), s
+
+
+def _model(x, xref, ncomp, *p):
+    """Linear continuum times ``ncomp`` Gaussian absorption profiles.
+
+    ``p = (c0, c1, a_1, mu_1, s_1, ..., a_n, mu_n, s_n)``; the continuum is
+    ``c0 + c1 (x - xref)``, so ``c0`` is its value at ``xref``.
+    """
+    y = p[0] + p[1] * (x - xref)
+    for k in range(ncomp):
+        a, mu, s = p[2 + 3 * k: 5 + 3 * k]
+        y = y * (1.0 - a * np.exp(-0.5 * ((x - mu) / s) ** 2))
+    return y
+
+
+def _failed(npix=0):
+    out = {k: np.nan for k in _FIT_KEYS}
+    out['npix'] = npix
+    out['ok'] = False
+    return out
+
+
+def fit_blend(wav, spec, lams, half=4.0, err=None, sigma0=1.3):
+    """Fit one or more Gaussian absorption lines jointly on a linear continuum.
+
+    The window is ``[min(lams) - half, max(lams) + half]``.  With ``err`` the
+    fit is weighted and ``absolute_sigma=True``, so the parameter errors are
+    the propagated measurement errors and ``chi2_nu`` tests the model.
+    Without it, ``curve_fit`` rescales the covariance by the residuals and
+    ``chi2_nu`` is NaN.
+
+    A fit that fails (too few pixels, no convergence, non-finite covariance,
+    or a result outside the window, with depth outside (0, 1) or width
+    outside (0.05, half)) returns NaN for every component, with ``ok=False``.
+    It never raises.
+
+    Args:
+        wav (np.ndarray): wavelength grid, nm.
+        spec (np.ndarray): spectrum on ``wav``.
+        lams (sequence of float): nominal line centres, nm.
+        half (float): half-width of the window beyond the outer lines, nm.
+        err (np.ndarray, optional): 1-sigma per-pixel uncertainty of ``spec``.
+        sigma0 (float): initial Gaussian sigma, nm.
+
+    Returns:
+        list of dict: one per line, keys ``mu, mu_err, sigma, sigma_err, fwhm,
+        fwhm_err, depth, depth_err, c0, c0_err, c1, c1_err, chi2_nu, npix, ok``
+        (continuum and ``chi2_nu`` are shared by all lines in the window).
+    """
+    lams = np.atleast_1d(np.asarray(lams, dtype=float))
+    ncomp = lams.size
+    wav = np.asarray(wav, dtype=float)
+    spec = np.asarray(spec, dtype=float)
+    lo, hi = lams.min() - half, lams.max() + half
+    m = (wav > lo) & (wav < hi) & np.isfinite(spec)
+    if err is not None:
+        err = np.asarray(err, dtype=float)
+        m &= np.isfinite(err) & (err > 0)
+    x, y = wav[m], spec[m]
+    e = err[m] if err is not None else None
+    npar = 2 + 3 * ncomp
+    npix = int(x.size)
+    if npix < npar + 3:
+        return [_failed(npix) for _ in range(ncomp)]
+
+    # Initial guesses: continuum through the window edges, depth from the
+    # spectrum at each nominal centre.
+    nedge = max(2, npix // 10)
+    xl, yl = np.mean(x[:nedge]), np.median(y[:nedge])
+    xr, yr = np.mean(x[-nedge:]), np.median(y[-nedge:])
+    xref = 0.5 * (lo + hi)
+    c1 = (yr - yl) / (xr - xl) if xr > xl else 0.0
+    c0 = yl + c1 * (xref - xl)
+    p0 = [c0, c1]
+    for lam in lams:
+        cont = c0 + c1 * (lam - xref)
+        ymin = y[np.argmin(np.abs(x - lam))]
+        a0 = np.clip(1.0 - ymin / cont, 0.05, 0.9) if cont > 0 else 0.2
+        p0 += [a0, lam, sigma0]
+
+    def f(xx, *p):
+        return _model(xx, xref, ncomp, *p)
+
+    try:
+        with np.errstate(all='ignore'):
+            p, cov = curve_fit(f, x, y, p0=p0, sigma=e,
+                               absolute_sigma=e is not None, maxfev=20000)
+    except Exception:
+        return [_failed(npix) for _ in range(ncomp)]
+    perr = np.sqrt(np.diag(cov)) if np.all(np.isfinite(cov)) else None
+    if perr is None or not np.all(np.isfinite(p)) or not np.all(np.isfinite(perr)):
+        return [_failed(npix) for _ in range(ncomp)]
+
+    chi2_nu = np.nan
+    if e is not None:
+        chi2_nu = float(np.sum(((y - f(x, *p)) / e) ** 2) / (npix - npar))
+    # c0 is reported at the nominal line centre, not at the window centre.
+    out = []
+    for k, lam in enumerate(lams):
+        a, mu, s = p[2 + 3 * k: 5 + 3 * k]
+        ea, emu, es = perr[2 + 3 * k: 5 + 3 * k]
+        s = abs(s)
+        if not (lo < mu < hi and 0.05 < s < half and 0.0 < a < 1.0):
+            return [_failed(npix) for _ in range(ncomp)]
+        c0_lam = p[0] + p[1] * (lam - xref)
+        var_c0 = (cov[0, 0] + (lam - xref) ** 2 * cov[1, 1]
+                  + 2 * (lam - xref) * cov[0, 1])
+        out.append(dict(mu=mu, mu_err=emu, sigma=s, sigma_err=es,
+                        fwhm=FWHM_PER_SIGMA * s, fwhm_err=FWHM_PER_SIGMA * es,
+                        depth=a, depth_err=ea,
+                        c0=c0_lam, c0_err=np.sqrt(max(var_c0, 0.0)),
+                        c1=p[1], c1_err=perr[1],
+                        chi2_nu=chi2_nu, npix=npix, ok=True))
+    return out
+
+
+def fit_line(wav, spec, lam, half=4.0, err=None, sigma0=1.3):
+    """Fit a single Gaussian absorption line on a linear continuum.
+
+    See :func:`fit_blend` for the model, weighting and failure behaviour.
+
+    Args:
+        wav (np.ndarray): wavelength grid, nm.
+        spec (np.ndarray): spectrum on ``wav``.
+        lam (float): nominal line centre, nm.
+        half (float): half-width of the fit window, nm.
+        err (np.ndarray, optional): 1-sigma per-pixel uncertainty of ``spec``.
+        sigma0 (float): initial Gaussian sigma, nm.
+
+    Returns:
+        dict: ``mu, mu_err, sigma, sigma_err, fwhm, fwhm_err, depth,
+        depth_err, c0, c0_err, c1, c1_err, chi2_nu, npix, ok``.
+    """
+    return fit_blend(wav, spec, [lam], half=half, err=err, sigma0=sigma0)[0]
+
+
+def fit_lines(wav, spec, lines=LINES, err=None, lam_col='lam_air'):
+    """Fit every line of a line table; lines sharing a ``group`` jointly.
+
+    Args:
+        wav (np.ndarray): wavelength grid, nm.
+        spec (np.ndarray): spectrum on ``wav``.
+        lines (pd.DataFrame): line table with the columns of :data:`LINES`.
+        err (np.ndarray, optional): 1-sigma per-pixel uncertainty of ``spec``.
+        lam_col (str): column of ``lines`` taken as the nominal centre
+            (``'lam_air'`` or ``'lam_vac'``).
+
+    Returns:
+        pd.DataFrame: the rows of ``lines`` (same order) with the fit columns
+        of :func:`fit_blend` appended, plus ``dmu = mu - lines[lam_col]``.
+        Lines that fail, or fall off the grid, are NaN with ``ok=False``.
+    """
+    lines = lines.reset_index(drop=True)
+    fits = [None] * len(lines)
+    for _, idx in lines.groupby('group', sort=False).groups.items():
+        sub = lines.loc[idx]
+        res = fit_blend(wav, spec, sub[lam_col].values,
+                        half=float(sub['half'].max()), err=err)
+        for i, r in zip(idx, res):
+            fits[i] = r
+    out = pd.concat([lines, pd.DataFrame(fits, columns=_FIT_KEYS)], axis=1)
+    out['dmu'] = out['mu'] - out[lam_col]
+    out['ok'] = out['ok'].astype(bool)
+    return out
+
+
+# --- FWHM(lambda) model -------------------------------------------------------
+
+#: Default reference wavelength and scale of the FWHM polynomial, nm.  The
+#: polynomial is in x = (lam - LAM_REF) / LAM_SCALE, so coeffs[0] is the FWHM
+#: at LAM_REF and the coefficients are well conditioned.
+LAM_REF = 600.0
+LAM_SCALE = 100.0
+
+
+def _design(lam, deg, lam_ref, lam_scale):
+    x = (np.asarray(lam, dtype=float) - lam_ref) / lam_scale
+    return np.vander(np.atleast_1d(x), deg + 1, increasing=True)
+
+
+def fit_fwhm_model(lam, fwhm, err, deg=2, lam_ref=LAM_REF, lam_scale=LAM_SCALE,
+                   scale_cov=False):
+    """Weighted least-squares polynomial (default quadratic) FWHM(lambda).
+
+    ``FWHM = sum_k coeffs[k] x**k`` with ``x = (lam - lam_ref) / lam_scale``.
+    The covariance is ``(A^T W A)^-1`` with ``W = 1/err**2``, i.e. it takes
+    ``err`` as absolute 1-sigma errors.  Points with a non-finite value or a
+    non-positive error are dropped.  With fewer than ``deg + 1`` points left,
+    the coefficients and covariance are NaN.
+
+    Args:
+        lam (array): line wavelengths, nm.
+        fwhm (array): fitted FWHM at each line, nm.
+        err (array): 1-sigma error of each FWHM, nm.
+        deg (int): polynomial degree.
+        lam_ref (float): reference wavelength, nm.
+        lam_scale (float): wavelength scale, nm.
+        scale_cov (bool): multiply the covariance by ``chi2_nu`` when it
+            exceeds 1 (when the scatter about the model exceeds ``err``).
+
+    Returns:
+        tuple: (coeffs, cov) -- arrays of shape (deg+1,) and (deg+1, deg+1).
+    """
+    lam, fwhm, err = (np.asarray(a, dtype=float).ravel() for a in (lam, fwhm, err))
+    m = np.isfinite(lam) & np.isfinite(fwhm) & np.isfinite(err) & (err > 0)
+    npar = deg + 1
+    if m.sum() < npar:
+        return np.full(npar, np.nan), np.full((npar, npar), np.nan)
+    A = _design(lam[m], deg, lam_ref, lam_scale)
+    w = 1.0 / err[m] ** 2
+    cov = np.linalg.inv(A.T @ (A * w[:, None]))
+    coeffs = cov @ (A.T @ (w * fwhm[m]))
+    if scale_cov and m.sum() > npar:
+        chi2_nu = np.sum(w * (fwhm[m] - A @ coeffs) ** 2) / (m.sum() - npar)
+        cov = cov * max(chi2_nu, 1.0)
+    return coeffs, cov
+
+
+def fwhm_at(lam, coeffs, lam_ref=LAM_REF, lam_scale=LAM_SCALE):
+    """Evaluate the FWHM(lambda) polynomial (nm) at ``lam`` (nm)."""
+    coeffs = np.asarray(coeffs, dtype=float)
+    y = _design(lam, coeffs.size - 1, lam_ref, lam_scale) @ coeffs
+    return y if np.ndim(lam) else float(y[0])
+
+
+def fwhm_err_at(lam, cov, lam_ref=LAM_REF, lam_scale=LAM_SCALE):
+    """1-sigma error (nm) of the FWHM(lambda) polynomial at ``lam`` (nm)."""
+    cov = np.asarray(cov, dtype=float)
+    A = _design(lam, cov.shape[0] - 1, lam_ref, lam_scale)
+    y = np.sqrt(np.einsum('ij,jk,ik->i', A, cov, A))
+    return y if np.ndim(lam) else float(y[0])
+
+
+def _nan_to_none(v):
+    """Replace NaN by None, recursively, so the JSON is standard."""
+    if isinstance(v, (list, tuple)):
+        return [_nan_to_none(u) for u in v]
+    if isinstance(v, float) and not np.isfinite(v):
+        return None
+    return v
+
+
+def _none_to_nan(v):
+    if isinstance(v, list):
+        return [_none_to_nan(u) for u in v]
+    return np.nan if v is None else v
+
+
+@dataclasses.dataclass
+class SRFModel:
+    """SRF of one channel: FWHM(lambda), a centroid offset and a shape.
+
+    The shape defaults to Gaussian.  ``shape`` / ``shape_par`` select any
+    :func:`srf_kernel` shape (``'supergauss'`` with exponent p, ``'pvoigt'``
+    with eta) at the same FWHM(lambda); :func:`convolution_matrix` and so
+    :func:`hypernet.edinterp.interpolate_ed_to_l` honour it.  JSON written
+    before the shape fields existed loads as Gaussian.
+
+    Attributes:
+        channel (str): e.g. ``'E'``, ``'Ld'``, ``'Lu'``.
+        coeffs (np.ndarray): FWHM polynomial coefficients in
+            ``x = (lam - lam_ref) / lam_scale``, nm.
+        cov (np.ndarray): covariance of ``coeffs``, nm^2.
+        offset (float): mean centroid offset, measured minus laboratory, nm.
+        offset_err (float): its 1-sigma error, nm.
+        lam_min, lam_max (float): wavelength range of the lines used, nm.
+        lam_ref, lam_scale (float): polynomial reference and scale, nm.
+        chi2_nu (float): reduced chi^2 of the FWHM fit.
+        npts (int): number of lines in the FWHM fit.
+        instrument (str): instrument id (e.g. ``'HYPSTAR_122304'``).
+        frame (str): wavelength scale of ``offset`` (``'air'`` or ``'vac'``).
+        meta (dict): free-form provenance (sequence, method, ...).
+        shape (str): one of :data:`SHAPES` (default ``'gauss'``).
+        shape_par (float): the shape parameter (p or eta); NaN for Gaussian.
+    """
+    channel: str
+    coeffs: np.ndarray
+    cov: np.ndarray
+    offset: float = np.nan
+    offset_err: float = np.nan
+    lam_min: float = np.nan
+    lam_max: float = np.nan
+    lam_ref: float = LAM_REF
+    lam_scale: float = LAM_SCALE
+    chi2_nu: float = np.nan
+    npts: int = 0
+    instrument: str = ''
+    frame: str = 'air'
+    meta: dict = dataclasses.field(default_factory=dict)
+    shape: str = 'gauss'
+    shape_par: float = np.nan
+
+    def __post_init__(self):
+        self.coeffs = np.asarray(self.coeffs, dtype=float)
+        self.cov = np.asarray(self.cov, dtype=float)
+        self.shape = self.shape or 'gauss'
+        if self.shape not in SHAPES:
+            raise ValueError('unknown SRF shape %r' % (self.shape,))
+        self.shape_par = np.nan if self.shape_par is None else float(self.shape_par)
+        if self.shape != 'gauss' and not np.isfinite(self.shape_par):
+            raise ValueError('shape %r needs a finite shape_par' % self.shape)
+
+    def fwhm(self, lam):
+        """FWHM (nm) at ``lam`` (nm)."""
+        return fwhm_at(lam, self.coeffs, self.lam_ref, self.lam_scale)
+
+    def fwhm_err(self, lam):
+        """1-sigma error of the FWHM (nm) at ``lam`` (nm)."""
+        return fwhm_err_at(lam, self.cov, self.lam_ref, self.lam_scale)
+
+    def sigma(self, lam):
+        """Gaussian sigma (nm) at ``lam`` (nm)."""
+        return self.fwhm(lam) / FWHM_PER_SIGMA
+
+    @classmethod
+    def from_lines(cls, channel, fits, deg=2, lam_col='lam_air',
+                   scale_cov=False, **kwargs):
+        """Build a model from a :func:`fit_lines` table.
+
+        The FWHM(lambda) fit uses the rows with ``ok`` and ``use_for_srf``.
+        The offset is the weighted mean of ``dmu`` over the rows that are
+        also not ``blend`` (the clean lines).  Its error is the error of the
+        weighted mean, inflated by ``sqrt(chi2_nu)`` when the scatter exceeds
+        the errors.
+
+        Args:
+            channel (str): channel name.
+            fits (pd.DataFrame): output of :func:`fit_lines`.
+            deg (int): polynomial degree.
+            lam_col (str): column used as the line wavelength.
+            scale_cov (bool): passed to :func:`fit_fwhm_model`.
+            **kwargs: other :class:`SRFModel` fields (instrument, meta, ...).
+
+        Returns:
+            SRFModel
+        """
+        use = fits['ok'].astype(bool) & fits['use_for_srf'].astype(bool)
+        f = fits[use]
+        lam_ref = kwargs.pop('lam_ref', LAM_REF)
+        lam_scale = kwargs.pop('lam_scale', LAM_SCALE)
+        coeffs, cov = fit_fwhm_model(f[lam_col], f['fwhm'], f['fwhm_err'],
+                                     deg=deg, lam_ref=lam_ref,
+                                     lam_scale=lam_scale, scale_cov=scale_cov)
+        chi2_nu = np.nan
+        if len(f) > deg + 1 and np.all(np.isfinite(coeffs)):
+            r = (f['fwhm'] - fwhm_at(f[lam_col].values, coeffs, lam_ref,
+                                     lam_scale)) / f['fwhm_err']
+            chi2_nu = float(np.sum(r ** 2) / (len(f) - deg - 1))
+        clean = f[~f['blend'].astype(bool)]
+        clean = clean[np.isfinite(clean['mu_err']) & (clean['mu_err'] > 0)]
+        offset = offset_err = np.nan
+        if len(clean):
+            w = 1.0 / clean['mu_err'].values ** 2
+            offset = float(np.sum(w * clean['dmu']) / np.sum(w))
+            offset_err = float(1.0 / np.sqrt(np.sum(w)))
+            if len(clean) > 1:
+                chi2_off = np.sum(w * (clean['dmu'] - offset) ** 2) / (len(clean) - 1)
+                offset_err *= np.sqrt(max(chi2_off, 1.0))
+        return cls(channel=channel, coeffs=coeffs, cov=cov, offset=offset,
+                   offset_err=offset_err,
+                   lam_min=float(f[lam_col].min()) if len(f) else np.nan,
+                   lam_max=float(f[lam_col].max()) if len(f) else np.nan,
+                   lam_ref=lam_ref, lam_scale=lam_scale, chi2_nu=chi2_nu,
+                   npts=int(len(f)),
+                   frame='vac' if lam_col == 'lam_vac' else 'air', **kwargs)
+
+    def to_dict(self):
+        """Plain-Python dict (lists, NaN as None)."""
+        d = dataclasses.asdict(self)
+        d['coeffs'] = self.coeffs.tolist()
+        d['cov'] = self.cov.tolist()
+        return {k: _nan_to_none(v) for k, v in d.items()}
+
+    @classmethod
+    def from_dict(cls, d):
+        d = {k: _none_to_nan(v) for k, v in d.items()}
+        return cls(**d)
+
+    def to_json(self, path=None, indent=2):
+        """JSON string; also written to ``path`` if given."""
+        s = json.dumps(self.to_dict(), indent=indent)
+        if path is not None:
+            with open(path, 'w') as fh:
+                fh.write(s + '\n')
+        return s
+
+    @classmethod
+    def from_json(cls, s):
+        """From a JSON string or the path of a JSON file."""
+        if os.path.exists(str(s)):
+            with open(s) as fh:
+                s = fh.read()
+        return cls.from_dict(json.loads(s))
+
+
+def save_srf_models(path, models, meta=None, indent=2):
+    """Write several :class:`SRFModel` to one JSON file, keyed by channel."""
+    doc = {'meta': meta or {},
+           'models': {m.channel: m.to_dict() for m in models}}
+    with open(path, 'w') as fh:
+        fh.write(json.dumps(doc, indent=indent) + '\n')
+
+
+def load_srf_models(path):
+    """Read a file written by :func:`save_srf_models`.
+
+    Returns:
+        dict: channel -> :class:`SRFModel`.
+    """
+    with open(path) as fh:
+        doc = json.load(fh)
+    return {k: SRFModel.from_dict(v) for k, v in doc['models'].items()}
+
+
+# --- Template (reference-spectrum) SRF fit -------------------------------------
+
+#: Telluric bands excluded from the template tiling (nm, air): O2-O2 (577 nm)
+#: with weak H2O, O2-gamma, the weak 640-650 nm H2O band, O2-B with the
+#: 690-750 nm H2O bands, O2-A, the 780-845 nm H2O band, and H2O longward of
+#: 870 nm.  HSRS is a top-of-atmosphere spectrum, so telluric absorption
+#: would otherwise be read as SRF.  The edges were widened after the first
+#: VEIT run, where windows at 575, 645, 745, 795 and 875 nm gave offsets of
+#: -0.5 to -1 nm (hypernet/wiggles/phase0a_template_veit.py; Logs, 2026-09-29).
+TELLURIC = ((570.0, 580.0), (626.0, 634.0), (640.0, 650.0), (685.0, 750.0),
+            (757.0, 773.0), (780.0, 845.0), (870.0, 2000.0))
+
+
+def template_windows(lo=390.0, hi=880.0, width=10.0, exclude=TELLURIC):
+    """Contiguous, non-overlapping windows between ``lo`` and ``hi``, skipping
+    any that touch an ``exclude`` band.
+
+    Returns:
+        list of (lo, hi) tuples, nm.
+    """
+    edges = np.arange(lo, hi + 1e-9, width)
+    out = []
+    for a, b in zip(edges[:-1], edges[1:]):
+        if any(a < eb and b > ea for ea, eb in exclude):
+            continue
+        out.append((float(a), float(b)))
+    return out
+
+
+def convolve_gaussian(ref_wave, ref_flux, wav, sigma):
+    """The reference spectrum seen through a Gaussian SRF of width ``sigma``
+    (nm), evaluated at the pixel centres ``wav``.
+
+    A direct weighted mean over the reference samples within +-6 sigma, so
+    the reference grid may be non-uniform.
+
+    Args:
+        ref_wave, ref_flux (np.ndarray): high-resolution reference, nm and flux.
+        wav (np.ndarray): pixel centres, nm.
+        sigma (float): Gaussian sigma, nm.
+
+    Returns:
+        np.ndarray: the convolved reference at ``wav``.
+    """
+    wav = np.atleast_1d(np.asarray(wav, dtype=float))
+    j0 = np.searchsorted(ref_wave, wav.min() - 6 * sigma)
+    j1 = np.searchsorted(ref_wave, wav.max() + 6 * sigma)
+    rw, rf = ref_wave[j0:j1], ref_flux[j0:j1]
+    dw = np.gradient(rw)
+    g = np.exp(-0.5 * ((wav[:, None] - rw[None, :]) / sigma) ** 2) * dw[None, :]
+    return (g @ rf) / g.sum(axis=1)
+
+
+#: SRF kernel shapes for the template fit (Phase 0 task 8d(ii)).
+SHAPES = ('gauss', 'pvoigt', 'supergauss')
+
+
+def srf_kernel(dx, sigma, shape='gauss', shape_par=None):
+    """Unnormalised SRF weights at offsets ``dx`` (nm) for an SRF whose FWHM is
+    ``FWHM_PER_SIGMA * sigma`` whatever the shape.
+
+    - ``'gauss'``: exp(-dx^2 / 2 sigma^2).
+    - ``'pvoigt'``: (1 - eta) Gaussian + eta Lorentzian with the same FWHM,
+      ``shape_par`` = eta in [0, 1] (0 = Gaussian; > 0 = extended wings).
+    - ``'supergauss'``: exp(-0.5 |dx / s|^p), with s set so that the FWHM
+      matches; ``shape_par`` = p (2 = Gaussian; > 2 flat-topped; < 2 peaked).
+    """
+    f = FWHM_PER_SIGMA * sigma
+    if shape == 'gauss':
+        return np.exp(-0.5 * (dx / sigma) ** 2)
+    if shape == 'pvoigt':
+        eta = shape_par
+        g = np.exp(-0.5 * (dx / sigma) ** 2) / (sigma * np.sqrt(2 * np.pi))
+        gam = 0.5 * f
+        lor = gam / np.pi / (dx ** 2 + gam ** 2)
+        return (1 - eta) * g + eta * lor
+    if shape == 'supergauss':
+        pp = shape_par
+        s_ = f / (2.0 * (2.0 * np.log(2.0)) ** (1.0 / pp))
+        return np.exp(-0.5 * np.abs(dx / s_) ** pp)
+    raise ValueError('unknown shape %r' % shape)
+
+
+def convolve_kernel(ref_wave, ref_flux, wav, sigma, shape='gauss', shape_par=None,
+                    half=None):
+    """As :func:`convolve_gaussian`, for any :func:`srf_kernel` shape.  The
+    kernel is truncated at +-``half`` nm (default 6 sigma for the Gaussian and
+    super-Gaussian, 8 nm for the pseudo-Voigt's wings) and renormalised."""
+    if shape == 'gauss':
+        return convolve_gaussian(ref_wave, ref_flux, wav, sigma)
+    wav = np.atleast_1d(np.asarray(wav, dtype=float))
+    half = half or (8.0 if shape == 'pvoigt' else 6 * sigma)
+    j0 = np.searchsorted(ref_wave, wav.min() - half)
+    j1 = np.searchsorted(ref_wave, wav.max() + half)
+    rw, rf = ref_wave[j0:j1], ref_flux[j0:j1]
+    dw = np.gradient(rw)
+    dx = wav[:, None] - rw[None, :]
+    k = srf_kernel(dx, sigma, shape, shape_par) * (np.abs(dx) <= half) * dw[None, :]
+    return (k @ rf) / k.sum(axis=1)
+
+
+_TEMPLATE_KEYS = ['lo', 'hi', 'lam_center', 'sigma', 'sigma_err', 'fwhm', 'fwhm_err',
+                  'dlam', 'dlam_err', 'veil', 'veil_err', 'shape', 'shape_par',
+                  'shape_par_err', 'tau_scale', 'tau_scale_err', 'c0', 'c1', 'chi2_nu',
+                  'npix', 'ok']
+
+
+def fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err=None, veil=True,
+                     sigma0=1.2, via_grid=None, shape='gauss', absorber=None,
+                     shape_par=None, fix_shape_par=False):
+    """Fit an SRF by forward-modelling a high-resolution reference.
+
+    Model, for pixels in ``[lo, hi]``::
+
+        spec(x) = (c0 + c1 (x - xc)) * (R(x - dlam) + veil * <R>)
+        R = [ref_flux * exp(-k * absorber)] convolved with the SRF
+
+    The SRF is a Gaussian of width ``sigma`` by default
+    (:func:`convolve_gaussian`); ``shape`` selects a pseudo-Voigt or
+    super-Gaussian with one extra fitted parameter (:func:`srf_kernel`;
+    ``sigma`` is then FWHM / 2.3548 for every shape).  ``<R>`` is R's mean
+    over the window and ``xc`` the window centre.
+
+    - ``dlam`` is measured minus reference wavelength (the sign of ``dmu``
+      in :func:`fit_lines`).
+    - ``veil`` is an additive, line-free fraction of the mean level (Ring
+      filling-in, stray light); fixed at 0 with ``veil=False``.
+    - ``absorber``: an optical depth tau(lambda) on ``ref_wave`` (e.g. O2 and
+      H2O for unit air mass, from :func:`hypernet.emod.gas_transmittance`).
+      Its scale ``k`` >= 0 (the effective air mass x column) is fitted.  This
+      lets telluric windows be fitted (Phase 0 task 8d(i)).
+
+    Because the reference carries the true line profiles (blends, wings,
+    bands), sigma is the SRF width itself, not the SRF convolved with a line.
+
+    With ``via_grid`` the model is evaluated on that grid and then linearly
+    interpolated (``np.interp``) onto ``wav``: the spectrum was observed on
+    ``via_grid`` and resampled, as WATERHYPERNET L1C/L2 irradiance is (the E
+    grid resampled onto the L grid).
+
+    The reference must be on the same wavelength scale (air or vacuum) as the
+    one ``dlam`` is to be measured against.  :func:`hypernet.refspec.load_hsrs`
+    with ``frame='air'`` gives HSRS in air.
+
+    Args:
+        wav, spec (np.ndarray): instrument wavelengths (nm) and spectrum.
+        ref_wave, ref_flux (np.ndarray): the reference, covering at least
+            ``[lo - 8, hi + 8]`` nm.
+        lo, hi (float): window, nm.
+        err (np.ndarray, optional): 1-sigma per-pixel error of ``spec``.
+        veil (bool): fit the additive veil.
+        sigma0 (float): initial sigma, nm.
+        via_grid (np.ndarray, optional): native grid of the observation, nm.
+        shape (str): one of :data:`SHAPES`.
+        absorber (np.ndarray, optional): optical depth on ``ref_wave``.
+        shape_par (float, optional): starting value of the shape parameter
+            (default 0.1 for the pseudo-Voigt, 2.0 for the super-Gaussian), or
+            its value with ``fix_shape_par``.
+        fix_shape_par (bool): hold the shape parameter at ``shape_par`` (e.g.
+            a laboratory super-Gaussian exponent) and fit only the width,
+            centroid, continuum and veil.  ``shape_par_err`` is then 0.
+
+    Returns:
+        dict: ``lo, hi, lam_center, sigma, sigma_err, fwhm, fwhm_err, dlam,
+        dlam_err, veil, veil_err, shape, shape_par, shape_par_err, tau_scale,
+        tau_scale_err, c0, c1, chi2_nu, npix, ok``.  NaN with ``ok=False`` on
+        failure; never raises.
+    """
+    wav = np.asarray(wav, dtype=float)
+    spec = np.asarray(spec, dtype=float)
+    m = (wav >= lo) & (wav <= hi) & np.isfinite(spec)
+    if err is not None:
+        err = np.asarray(err, dtype=float)
+        m &= np.isfinite(err) & (err > 0)
+    x, y = wav[m], spec[m]
+    e = err[m] if err is not None else None
+    xc = 0.5 * (lo + hi)
+    out = {k: np.nan for k in _TEMPLATE_KEYS}
+    out.update(lo=lo, hi=hi, lam_center=xc, npix=int(x.size), ok=False, shape=shape)
+    has_shape = shape != 'gauss'
+    if has_shape and fix_shape_par and (shape_par is None or not np.isfinite(shape_par)):
+        raise ValueError('fix_shape_par needs a finite shape_par')
+    fixed_sp = float(shape_par) if (has_shape and fix_shape_par) else None
+    fit_shape = has_shape and fixed_sp is None
+    has_tau = absorber is not None
+    npar = 4 + fit_shape + bool(veil) + has_tau
+    if x.size < npar + 4 or ref_wave[0] > lo - 6 or ref_wave[-1] < hi + 6:
+        return out
+    k0 = np.searchsorted(ref_wave, lo - 10.0)
+    k1 = np.searchsorted(ref_wave, hi + 10.0)
+    rw, rf = ref_wave[k0:k1], ref_flux[k0:k1]
+    tau = np.asarray(absorber, dtype=float)[k0:k1] if has_tau else None
+
+    g = None
+    if via_grid is not None:
+        via_grid = np.asarray(via_grid, dtype=float)
+        g = via_grid[(via_grid > lo - 3.0) & (via_grid < hi + 3.0)]
+        if g.size < 4:
+            return out
+
+    # parameter layout: c0, c1, sigma, dlam, [shape_par], [veil], [k]
+    i_sh = 4 if fit_shape else None
+    i_v = 4 + fit_shape if veil else None
+    i_k = 4 + fit_shape + bool(veil) if has_tau else None
+
+    def conv(xx, p):
+        sig, dl = p[2], p[3]
+        flux = rf * np.exp(-p[i_k] * tau) if has_tau else rf
+        sp = p[i_sh] if fit_shape else fixed_sp
+        at = xx if g is None else g
+        R = convolve_kernel(rw, flux, at - dl, sig, shape, sp)
+        return R if g is None else np.interp(xx, g, R)
+
+    def f(xx, *p):
+        R = conv(xx, p)
+        vv = p[i_v] if veil else 0.0
+        return (p[0] + p[1] * (xx - xc)) * (R + vv * R.mean())
+
+    sh0, shlo, shhi = {'gauss': (None, None, None), 'pvoigt': (0.1, 0.0, 1.0),
+                       'supergauss': (2.0, 1.0, 8.0)}[shape]
+    p_init = [np.nan, np.nan, sigma0, 0.0]
+    lb = [-np.inf, -np.inf, 0.15, -1.0]
+    ub = [np.inf, np.inf, 3.5, 1.0]
+    if fit_shape:
+        if shape_par is not None and np.isfinite(shape_par):
+            sh0 = float(np.clip(shape_par, shlo, shhi))
+        p_init.append(sh0); lb.append(shlo); ub.append(shhi)
+    if veil:
+        p_init.append(0.0); lb.append(-0.3); ub.append(0.9)
+    if has_tau:
+        p_init.append(1.0); lb.append(0.0); ub.append(20.0)
+    # linear continuum guess given the initial shape
+    R0 = conv(x, p_init)
+    A = np.column_stack([R0, R0 * (x - xc)])
+    p_init[0], p_init[1] = np.linalg.lstsq(A, y, rcond=None)[0]
+    try:
+        with np.errstate(all='ignore'):
+            p, cov = curve_fit(f, x, y, p0=p_init, sigma=e, absolute_sigma=e is not None,
+                               bounds=(lb, ub), max_nfev=4000)
+    except Exception:
+        return out
+    perr = np.sqrt(np.diag(cov)) if np.all(np.isfinite(cov)) else None
+    if perr is None or not np.all(np.isfinite(p)) or not np.all(np.isfinite(perr)):
+        return out
+    # sigma, dlam or veil pinned at a bound is a failed fit; a shape parameter
+    # or absorber scale at its physical limit (eta = 0, k = 0) is allowed
+    check = [2, 3] + ([i_v] if veil else [])
+    at_bound = [abs(p[i] - lb[i]) < 1e-6 * max(1, abs(lb[i])) or
+                abs(p[i] - ub[i]) < 1e-6 * max(1, abs(ub[i])) for i in check]
+    if any(at_bound):
+        return out
+    chi2_nu = np.nan
+    if e is not None:
+        chi2_nu = float(np.sum(((y - f(x, *p)) / e) ** 2) / (x.size - npar))
+    out.update(sigma=p[2], sigma_err=perr[2], fwhm=FWHM_PER_SIGMA * p[2],
+               fwhm_err=FWHM_PER_SIGMA * perr[2], dlam=p[3], dlam_err=perr[3],
+               veil=p[i_v] if veil else 0.0, veil_err=perr[i_v] if veil else 0.0,
+               shape_par=p[i_sh] if fit_shape else (fixed_sp if has_shape else np.nan),
+               shape_par_err=perr[i_sh] if fit_shape else (0.0 if has_shape else np.nan),
+               tau_scale=p[i_k] if has_tau else np.nan,
+               tau_scale_err=perr[i_k] if has_tau else np.nan,
+               c0=p[0], c1=p[1], chi2_nu=chi2_nu, ok=True)
+    return out
+
+
+def fit_template_windows(wav, spec, ref_wave, ref_flux, windows=None, err=None,
+                         veil=True, via_grid=None, shape='gauss', absorber=None,
+                         shape_par=None, fix_shape_par=False):
+    """:func:`fit_srf_template` over a list of windows.
+
+    The table is shaped for :meth:`SRFModel.from_lines` (``lam_air`` = window
+    centre, ``dmu`` = ``dlam``, ``mu_err`` = ``dlam_err``, ``blend`` False,
+    ``use_for_srf`` True).
+
+    Args:
+        windows (list of (lo, hi)): default :func:`template_windows`.
+        via_grid, shape, absorber, shape_par, fix_shape_par: passed to
+            :func:`fit_srf_template`.
+
+    Returns:
+        pd.DataFrame: one row per window.
+    """
+    windows = template_windows() if windows is None else windows
+    rows = []
+    for lo, hi in windows:
+        r = fit_srf_template(wav, spec, ref_wave, ref_flux, lo, hi, err=err, veil=veil,
+                             via_grid=via_grid, shape=shape, absorber=absorber,
+                             shape_par=shape_par, fix_shape_par=fix_shape_par)
+        r['name'] = 'T%03.0f-%03.0f' % (lo, hi)
+        rows.append(r)
+    df = pd.DataFrame(rows)
+    df['lam_air'] = df['lam_center']
+    df['dmu'] = df['dlam']
+    df['mu_err'] = df['dlam_err']
+    df['blend'] = False
+    df['use_for_srf'] = True
+    df['ok'] = df['ok'].astype(bool)
+    return df
+
+
+# --- pixel convolution (moved from hypernet.twin in Phase 2 task 3) -----------------
+
+#: Cached convolution matrices: key -> scipy.sparse.csr_matrix (LRU).
+_MATRIX_CACHE = {}
+MATRIX_CACHE_SIZE = 16          # a 1538-px matrix is ~25 MB
+
+
+def fwhm_values(fwhm, grid):
+    """FWHM (nm) at ``grid`` from a constant, a per-pixel array, a callable or
+    an :class:`SRFModel`."""
+    grid = np.asarray(grid, dtype=float)
+    if hasattr(fwhm, 'fwhm'):
+        fwhm = fwhm.fwhm
+    f = fwhm(grid) if callable(fwhm) else np.broadcast_to(np.asarray(fwhm, float), grid.shape)
+    return np.asarray(f, dtype=float)
+
+
+class ShapedFWHM:
+    """A plain FWHM(lambda) callable that also carries an SRF shape.
+
+    Used for Monte Carlo draws of an :class:`SRFModel`'s coefficients: like a
+    plain callable it is never cached (:func:`srf_key` returns None), but
+    :func:`convolution_matrix` still convolves with ``shape``."""
+
+    def __init__(self, fn, shape='gauss', shape_par=np.nan):
+        self.fn, self.shape, self.shape_par = fn, shape or 'gauss', shape_par
+
+    def __call__(self, lam):
+        return self.fn(lam)
+
+
+def srf_shape(spec):
+    """``(shape, shape_par)`` of an SRF spec: an :class:`SRFModel` or
+    :class:`ShapedFWHM` carries one; anything else is Gaussian."""
+    shape = getattr(spec, 'shape', 'gauss') or 'gauss'
+    if not isinstance(shape, str):          # e.g. a numpy array's .shape
+        return 'gauss', np.nan
+    par = getattr(spec, 'shape_par', np.nan)
+    return shape, (np.nan if shape == 'gauss' or par is None else float(par))
+
+
+def srf_key(fwhm):
+    """A hashable key for an SRF spec, or None if it cannot be cached (a
+    plain callable: two lambdas may differ while sharing nothing hashable).
+    An SRFModel's key includes its shape, so a cached Gaussian matrix is
+    never reused for a super-Gaussian."""
+    if isinstance(fwhm, SRFModel):
+        shape, par = srf_shape(fwhm)
+        return ('model', np.asarray(fwhm.coeffs, float).tobytes(), float(fwhm.lam_ref),
+                float(fwhm.lam_scale), shape, par if shape != 'gauss' else None)
+    if callable(fwhm):
+        return None
+    a = np.asarray(fwhm, dtype=float)
+    return ('const', float(a)) if a.ndim == 0 else ('array', a.tobytes())
+
+
+def convolution_matrix(lam_hr, grid, fwhm, nsig=5.0, cache=True, shape=None, shape_par=None):
+    """The SRF convolution as a sparse matrix M, so that ``M @ spec_hr`` is
+    :func:`convolve_to_grid`.
+
+    Row k holds the SRF weights at lam_hr - grid_k times dlam, truncated at
+    +-``nsig`` sigma and normalised to sum to 1 (so a constant maps to itself).
+    The SRF is Gaussian, exp(-(lam_hr - grid_k)^2 / 2 sigma_k^2), unless the
+    spec carries a shape (:func:`srf_shape`: an SRFModel or ShapedFWHM) or
+    ``shape`` is given; the other shapes use :func:`srf_kernel` at the same
+    FWHM (the pseudo-Voigt's wings are kept to at least +-8 nm).
+
+    Parameters
+    ----------
+    lam_hr : array
+        High-resolution wavelengths, ascending (uniform or not), nm.
+    grid : array
+        Pixel centres, nm.
+    fwhm : float, array, callable or SRFModel
+        SRF FWHM (nm): constant, one per pixel, ``f(lambda)``, or an SRFModel.
+    nsig : float
+        Kernel half-width in sigma.
+    cache : bool
+        Reuse a matrix built for the same (lam_hr, grid, fwhm, nsig, shape).
+        Plain callables are never cached (see :func:`srf_key`).
+    shape, shape_par : str, float, optional
+        Override the spec's shape (:data:`SHAPES`).
+
+    Returns
+    -------
+    scipy.sparse.csr_matrix
+        Shape (grid.size, lam_hr.size).  A row with no samples in range is
+        empty, and the convolution there is NaN.
+    """
+    from scipy import sparse
+
+    lam_hr = np.asarray(lam_hr, dtype=float)
+    grid = np.asarray(grid, dtype=float)
+    if shape is None:
+        shape, shape_par = srf_shape(fwhm)
+    shape_par = np.nan if shape == 'gauss' or shape_par is None else float(shape_par)
+    if shape not in SHAPES:
+        raise ValueError('unknown SRF shape %r' % (shape,))
+    k = srf_key(fwhm) if cache else None
+    if k is not None:
+        key = (lam_hr.size, lam_hr[0], lam_hr[-1], hash(lam_hr.tobytes()),
+               hash(grid.tobytes()), k, float(nsig), shape,
+               None if shape == 'gauss' else shape_par)
+        if key in _MATRIX_CACHE:
+            _MATRIX_CACHE[key] = _MATRIX_CACHE.pop(key)          # most recent last
+            return _MATRIX_CACHE[key]
+    sig = fwhm_values(fwhm, grid) / FWHM_PER_SIGMA
+    half = nsig * sig
+    if shape == 'pvoigt':
+        half = np.maximum(half, 8.0)
+    dw = np.gradient(lam_hr)
+    lo = np.searchsorted(lam_hr, grid - half)
+    hi = np.searchsorted(lam_hr, grid + half)
+    n = hi - lo
+    indptr = np.concatenate([[0], np.cumsum(n)])
+    cols = np.empty(indptr[-1], dtype=np.int64)
+    vals = np.empty(indptr[-1])
+    for r in range(grid.size):
+        sl = slice(lo[r], hi[r])
+        if shape == 'gauss':
+            w = np.exp(-0.5 * ((lam_hr[sl] - grid[r]) / sig[r]) ** 2) * dw[sl]
+        else:
+            w = srf_kernel(lam_hr[sl] - grid[r], sig[r], shape, shape_par) * dw[sl]
+        cols[indptr[r]:indptr[r + 1]] = np.arange(lo[r], hi[r])
+        vals[indptr[r]:indptr[r + 1]] = w / w.sum() if w.size else w
+    M = sparse.csr_matrix((vals, cols, indptr), shape=(grid.size, lam_hr.size))
+    if k is not None:
+        _MATRIX_CACHE[key] = M
+        while len(_MATRIX_CACHE) > MATRIX_CACHE_SIZE:
+            _MATRIX_CACHE.pop(next(iter(_MATRIX_CACHE)))
+    return M
+
+
+def convolve_to_grid(lam_hr, spec_hr, grid, fwhm, nsig=5.0, cache=True, shape=None,
+                     shape_par=None):
+    """Observe ``spec_hr`` (on ``lam_hr``, nm) with the SRF on ``grid``
+    (Gaussian unless the spec carries a shape or ``shape`` is given; see
+    :func:`convolution_matrix`).
+
+    Parameters
+    ----------
+    lam_hr, spec_hr : array
+        High-resolution spectrum (ascending ``lam_hr``; uniform or not).
+    grid : array
+        Pixel centres, nm.
+    fwhm : float, array, callable or SRFModel
+        SRF FWHM (nm): a constant, one value per pixel, a function of
+        wavelength (e.g. ``SRFModel.fwhm``), or an SRFModel.
+    nsig : float
+        Kernel half-width in sigma.
+    cache : bool
+        Passed to :func:`convolution_matrix`.
+
+    Returns
+    -------
+    numpy.ndarray
+        The SRF-weighted mean of ``spec_hr`` at each pixel (weights include
+        the sample spacing, so a constant maps to the same constant); NaN
+        where no high-resolution sample is within the kernel.
+    """
+    M = convolution_matrix(lam_hr, grid, fwhm, nsig=nsig, cache=cache, shape=shape,
+                           shape_par=shape_par)
+    out = M @ np.asarray(spec_hr, dtype=float)
+    out[np.diff(M.indptr) == 0] = np.nan
+    return out

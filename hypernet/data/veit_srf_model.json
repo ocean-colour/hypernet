@@ -1,0 +1,160 @@
+{
+  "meta": {
+    "site": "VEIT",
+    "sequence_id": "SEQ20260604T084543",
+    "system_id": "HYPSTAR_122304",
+    "cal_date_irr": "2024-11-12",
+    "cal_date_rad": "2024-11-08",
+    "sza": 36.6702,
+    "method": "TSIS-1 HSRS v2 (air) x Gaussian SRF, 10 nm windows 390-880 nm, telluric bands excluded (srf.fit_template_windows)",
+    "veil": {
+      "E": false,
+      "Ld": false,
+      "Lu": false
+    },
+    "errors": "scan_errors flatten_px=20",
+    "offset": "measured - HSRS(air); add (air_to_vac(lam) - lam) for vacuum",
+    "empirical_models": "hypernet/data/veit_srf_model_empirical.json",
+    "script": "hypernet/wiggles/phase0a_template_veit.py"
+  },
+  "models": {
+    "E": {
+      "channel": "E",
+      "coeffs": [
+        2.2125416450117683,
+        0.023299345863503684,
+        0.04495503758499941
+      ],
+      "cov": [
+        [
+          0.00347102031488114,
+          0.0005579340914187408,
+          -0.0007001932074184594
+        ],
+        [
+          0.0005579340914187408,
+          0.0003228293998024672,
+          -5.945207051023323e-05
+        ],
+        [
+          -0.0007001932074184591,
+          -5.945207051023319e-05,
+          0.00019681335218342516
+        ]
+      ],
+      "offset": 0.057624392150685586,
+      "offset_err": 0.017977208439728897,
+      "lam_min": 395.0,
+      "lam_max": 865.0,
+      "lam_ref": 600.0,
+      "lam_scale": 100.0,
+      "chi2_nu": 20.51079639987915,
+      "npts": 27,
+      "instrument": "HYPSTAR_122304",
+      "frame": "air",
+      "meta": {
+        "site": "VEIT",
+        "sequence_id": "SEQ20260604T084543",
+        "system_id": "HYPSTAR_122304",
+        "cal_date_irr": "2024-11-12",
+        "cal_date_rad": "2024-11-08",
+        "sza": 36.6702,
+        "channel": "E",
+        "method": "template",
+        "veil": false
+      }
+    },
+    "Ld": {
+      "channel": "Ld",
+      "coeffs": [
+        2.6370436728174607,
+        -0.07834619342277138,
+        0.020351348041270256
+      ],
+      "cov": [
+        [
+          0.0033154307931272864,
+          0.0005415382372695243,
+          -0.0006302483706890558
+        ],
+        [
+          0.000541538237269524,
+          0.0006700165948545754,
+          0.00014253411864249547
+        ],
+        [
+          -0.0006302483706890559,
+          0.0001425341186424953,
+          0.0002704558192609909
+        ]
+      ],
+      "offset": 0.0968719713798398,
+      "offset_err": 0.02063075444840648,
+      "lam_min": 395.0,
+      "lam_max": 865.0,
+      "lam_ref": 600.0,
+      "lam_scale": 100.0,
+      "chi2_nu": 18.467126001305314,
+      "npts": 27,
+      "instrument": "HYPSTAR_122304",
+      "frame": "air",
+      "meta": {
+        "site": "VEIT",
+        "sequence_id": "SEQ20260604T084543",
+        "system_id": "HYPSTAR_122304",
+        "cal_date_irr": "2024-11-12",
+        "cal_date_rad": "2024-11-08",
+        "sza": 36.6702,
+        "channel": "Ld",
+        "method": "template",
+        "veil": false
+      }
+    },
+    "Lu": {
+      "channel": "Lu",
+      "coeffs": [
+        2.6318987369571163,
+        -0.0570332053897209,
+        0.04373348121428133
+      ],
+      "cov": [
+        [
+          0.004561654801886458,
+          0.0011856199547157528,
+          -0.0007394156649418554
+        ],
+        [
+          0.0011856199547157504,
+          0.0021661307210656404,
+          0.0006756809791955805
+        ],
+        [
+          -0.0007394156649418574,
+          0.0006756809791955793,
+          0.0006465871472268222
+        ]
+      ],
+      "offset": 0.02712642310980505,
+      "offset_err": 0.03176035787492202,
+      "lam_min": 395.0,
+      "lam_max": 865.0,
+      "lam_ref": 600.0,
+      "lam_scale": 100.0,
+      "chi2_nu": 12.421358185424253,
+      "npts": 26,
+      "instrument": "HYPSTAR_122304",
+      "frame": "air",
+      "meta": {
+        "site": "VEIT",
+        "sequence_id": "SEQ20260604T084543",
+        "system_id": "HYPSTAR_122304",
+        "cal_date_irr": "2024-11-12",
+        "cal_date_rad": "2024-11-08",
+        "sza": 36.6702,
+        "channel": "Lu",
+        "method": "template",
+        "veil": false
+      }
+    }
+  }
+}

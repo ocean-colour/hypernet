@@ -1,0 +1,76 @@
+To: Joel, Kevin
+Subject: HYPSTAR lab wavelength data -- thanks, first results, and a few questions
+
+Dear Joel and Kevin,
+
+Thank you, Joel, for the HYPSTAR lab wavelength-calibration files.  They
+were exactly what we needed, and a first pass already tells us a lot.
+
+What the lab data show
+
+1. They confirm the two instrument classes we found in the field data.
+   The lab FWHM of L minus E, over the 405-546 nm lamp lines, is +0.39 to
+   +0.47 nm on 120242, 122302 and 122304, and -0.06 to +0.02 nm on
+   121222, 121231, 122303 and 122305.  These agree with our Fraunhofer-
+   line fits to the Release 2 spectra.  122303, which we had as
+   borderline, is clearly in the E = L group.
+
+2. Our field FWHM models agree with the lamp-line widths to within about
+   0.1 nm, channel by channel.
+
+3. On the narrow-E instruments, the E line profile is flat-topped
+   (super-Gaussian exponent 2.5 to 2.9), while L is Gaussian on every
+   instrument.  We will include this shape in our correction.
+
+4. From the polynomials we can reconstruct each instrument's E and L
+   wavelength grids.  Cropped to 350-1100 nm, they reproduce the
+   processor's grids exactly.  Until now we had to use the 122304 E grid
+   as a stand-in for the other instruments.
+
+5. All the reference lines are air wavelengths, which answers our
+   earlier question about the scale.
+
+6. The 4th-order polynomial misses the same lines by the same amount on
+   every instrument and both channels: about +0.09 nm at Hg 404.7 nm,
+   -0.09 nm at Hg 546.1 nm, and about 0.1 nm in the NIR.  This may explain
+   part of a small common wavelength pattern we see in the field data.
+   We will look into it and report back.
+
+Questions
+
+1. The processor still uses the 2023_01 wavelength polynomials for 122304
+   after its November 2024 recalibration, and likewise for 122302.  The
+   2024_09 lab polynomials differ by 0.02-0.05 nm rms, and by up to 0.10 nm.
+   Is keeping the older wavelengths intentional?
+
+2. Is there a lab wavelength calibration for 121222 from its March 2025
+   recalibration?  The zip has only the 2021_07 epochs for that unit.
+
+3. What is the wl column in lamp_vnir.dat?  It looks like a fixed nominal
+   grid for each instrument, perhaps the factory one, and deltawl is
+   measured against it.
+
+4. How does the lamp illuminate the irradiance entrance optic during the
+   wavelength calibration?  Is it into the diffuser, at what angle, and
+   does it fill it?  In the lab the E profile is flat-topped (exponent about
+   2.8), while our solar-line fit on the VEIT sequence gives about 2.2.  We
+   would like to know whether sunlight and skylight fill the diffuser
+   differently from the lamp.
+
+5. Is there any news on the L1A delivery (L1A_IRR, L1A_RAD, L1C_ALL and
+   L2A_REF for the sequences in our request) and the RAD and IRR
+   calibration files?  The remaining checks, and the before-and-after test
+   on real data, depend on them.
+
+6. Which lines did you fit for the wavelength polynomials?  We have
+   assumed all the lines listed in deltawl_vnir.dat for each epoch.
+
+A note on the data: I have committed two tables derived from your files
+to our hypernet repository, whose documentation is public.  They hold
+the polynomial coefficients of every epoch and the lab FWHM at each lamp
+line, with our own refits of the line shapes.  The raw files themselves
+are not in the repository.  If you would rather these tables were not
+public, please tell me and I will take them down.
+
+Best regards,
+Xavier

@@ -1,0 +1,10 @@
+# Documentation build requirements for Read the Docs.
+# Install with: pip install -r docs/requirements.txt
+#
+# The hypernet package itself (and its runtime deps) is installed separately by
+# Read the Docs via `.readthedocs.yaml` (pip install .), so this file only needs
+# the Sphinx toolchain.
+
+sphinx>=7.0
+myst-parser>=2.0            # Markdown sources (see conf.py)
+furo>=2024.1                # modern light/dark HTML theme, as in IOPtics

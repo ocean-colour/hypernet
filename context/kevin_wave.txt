@@ -1,0 +1,19 @@
+Yes, it would be great if you could take a look at that for WATERHYPERNET/HYPSTAR data and provide a better spectral interpolation taking account of intraband (fine wavelength scale) variability of downwelling irradiance, if that is indeed the problem.
+
+ 
+
+I attach a DOC with ideas on a study/paper that would be relevant for WATERHYPERNET and, I think, the aquatic optics (“ocean colour”) community. I attach also a WATERHYPERNET/HYPSTAR measurement before (L1A) and after (L1C, L2A) spectral interpolation of Ed to the radiance wavelength grid in case you want to play with it. Of course, I have plenty more. More info on the idea and the data in the attached DOC and papers referenced therein.
+
+ 
+
+I’m interested to know what you find if you demonstrate an improvement in L2A data quality (e.g. water reflectance second derivatives),  especially if you can provide a code snippet that we can plug into the HYPSTAR processor – see github ref in attached DOC. Let me know if you have any questions or if the proposed study does not make sense.
+
+ 
+
+Of course, you can also take a different direction from the proposed one. I’m sure you have insights from your community and experience that would be useful for me/us.
+
+ 
+
+I note that I can sometimes be slow to respond. While I am quite excited about this and the UV reflectance ratios I presented at OceanOptics and am amazed at how much faster I can know work with Claude doing the plots,  I will soon have to read some of the emails regarding admin problems that have been accumulating. These regularly sink me for a few days.
+
+ 

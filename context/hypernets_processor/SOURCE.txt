@@ -1,0 +1,21 @@
+Source: https://github.com/HYPERNETS/hypernets_processor
+Commit: 9a12819a3ffb224de9e5f761b1217d130fa69f83 (2026-03-20, "Create LICENSE")
+        Kevin Ruddick's pinned commit; on 2026-10-07 it is also the head of `main`
+        (no diff for the files below).  The public repo is not current with Release 2.
+Fetched: 2026-10-07 via raw.githubusercontent.com (Phase 2 task 2).
+License: see the repository's LICENSE at that commit.
+
+Files (paths as in the repository):
+  hypernets_processor/interpolation/__init__.py
+  hypernets_processor/interpolation/interpolate.py
+  hypernets_processor/interpolation/measurement_functions/__init__.py
+  hypernets_processor/interpolation/measurement_functions/interpolation_factory.py
+  hypernets_processor/interpolation/measurement_functions/interpolate_wav_linear.py
+  hypernets_processor/interpolation/measurement_functions/interpolate_wav_clearsky.py
+  hypernets_processor/interpolation/measurement_functions/interpolate_time_linear.py
+  hypernets_processor/interpolation/measurement_functions/interpolate_time_linear_coscorrected.py
+  hypernets_processor/etc/processor_water_defaults.config
+  hypernets_processor/etc/processor_land_defaults.config
+  docs/sphinx/content/atbd/processing/interpolate.rst
+
+Reference copies for writing the drop-in snippet; not imported by hypernet.

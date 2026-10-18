@@ -1,0 +1,201 @@
+"""Tests for the L1A/L1C/L2A readers (:mod:`hypernet.whn_l1a`).
+
+Two tiers:
+
+- **Tier 1** -- filename parsing and time interpolation, run everywhere.
+- **Tier 2** -- ``@needs_wavelengths`` tests read Kevin's VEIT sample
+  (SEQ20260604T084543) and skip when ``$OS_COLOR/WATERHYPERNET/Wavelengths``
+  or the sample is not there.
+
+Run from the repository root::
+
+    pytest -q hypernet/tests/test_whn_l1a.py
+"""
+
+import numpy as np
+import pytest
+
+from hypernet import whn_l1a as wl
+
+VEIT = dict(site='VEIT', seq_time='20260604T0845')
+
+
+def _veit_files():
+    try:
+        files = wl.sequence_files(**VEIT)
+    except Exception:
+        return None
+    return files if all(p in files for p in wl.PRODUCTS) else None
+
+
+needs_wavelengths = pytest.mark.skipif(
+    _veit_files() is None,
+    reason='requires the VEIT sample in $OS_COLOR/WATERHYPERNET/Wavelengths')
+
+
+# --- Tier 1 ------------------------------------------------------------------
+
+def test_parse_name():
+    a = wl.parse_name('/x/HYPERNETS_W_VEIT_L1A_IRR_20260604T0845_20260828T1547_v2.1.nc')
+    assert a == dict(network='W', site='VEIT', product='L1A_IRR',
+                     seq_time='20260604T0845', proc_time='20260828T1547',
+                     azimuth=None, version='v2.1')
+    c = wl.parse_name('HYPERNETS_W_VEIT_L1C_ALL_20260604T0845_20260828T1547_090_v2.1.nc')
+    assert c['product'] == 'L1C_ALL' and c['azimuth'] == '090'
+    assert wl.parse_name('plot_irradiance_HYPERNETS_W_VEIT_L1B_IRR.png') is None
+
+
+def test_interp_in_time():
+    wave = np.arange(5)
+    s1, s2 = np.full(5, 10.0), np.full(5, 20.0)
+    scans = np.stack([s1, s1, s2, s2, s2], axis=1)
+    sid = np.array([4, 4, 10, 10, 10])
+    t = np.array([100, 100, 200, 200, 200])
+    np.testing.assert_allclose(wl.interp_in_time(scans, sid, t, 125.0), 12.5)
+    np.testing.assert_allclose(wl.interp_in_time(scans, sid, t, 50.0), 10.0)   # clamped
+    np.testing.assert_allclose(wl.interp_in_time(scans, sid, t, 300.0), 20.0)
+    one = wl.interp_in_time(scans[:, :2], sid[:2], t[:2], 999.0)
+    np.testing.assert_allclose(one, 10.0)
+    means, times, ids = wl.series_means(scans, sid, t)
+    assert means.shape == (wave.size, 2) and list(ids) == [4, 10]
+
+
+def test_wavelengths_root_explicit(tmp_path):
+    assert wl.wavelengths_root(str(tmp_path)) == str(tmp_path)
+
+
+# --- Tier 2: the VEIT sample -------------------------------------------------
+
+@pytest.fixture(scope='module')
+def veit():
+    f = _veit_files()
+    return dict(irr=wl.load_l1a_irr(f['L1A_IRR']), rad=wl.load_l1a_rad(f['L1A_RAD']),
+                l1c=wl.load_l1c(f['L1C_ALL']), l2a=wl.load_l2a(f['L2A_REF']))
+
+
+@needs_wavelengths
+def test_veit_grids_and_scans(veit):
+    irr, rad, l1c, l2a = veit['irr'], veit['rad'], veit['l1c'], veit['l2a']
+    assert irr['wave'].size == 1536 and irr['scans'].shape == (1536, 6)
+    assert rad['wave'].size == 1538 and rad['n_scans'] == 12
+    assert rad['Lu']['n_scans'] == 6 and rad['Ld']['n_scans'] == 6
+    assert l1c['n'] == 6 and l1c['irradiance'].shape == (1538, 6)
+    assert l2a['n'] == 1 and l2a['reflectance'].shape == (1538, 1)
+    np.testing.assert_array_equal(l1c['wave'], rad['wave'])
+    assert irr['meta']['system_id'] == 'HYPSTAR_122304'
+
+
+@needs_wavelengths
+def test_veit_vza_split(veit):
+    rad, l1c = veit['rad'], veit['l1c']
+    assert np.all(rad['Lu']['vza'] < 90) and np.all(rad['Ld']['vza'] >= 90)
+    np.testing.assert_allclose(l1c['vza'], rad['Lu']['vza'])   # L1C is the water view
+    assert np.all(veit['irr']['vza'] > 170)                      # E looks up
+    # the sky is much brighter than the water view
+    j = np.argmin(np.abs(rad['wave'] - 450))
+    assert rad['Ld']['mean'][j] > 5 * rad['Lu']['mean'][j]
+
+
+@needs_wavelengths
+def test_veit_l1c_irradiance_is_linear_interp(veit):
+    irr, l1c = veit['irr'], veit['l1c']
+    w = l1c['wave']
+    E_lin = np.interp(w, irr['wave'], irr['mean'])
+    rel = np.abs(l1c['irradiance'] - E_lin[:, None]) / E_lin[:, None]
+    # 1e-4 where the lines are; the departures grow at low-signal pixels
+    # (grid ends, the 935 nm H2O band; hypernet/wiggles/phase0a_l1c_consistency.py [8])
+    assert np.nanmax(rel[(w > 400) & (w < 900)]) < 1e-4
+    assert np.nanmax(rel[(w > 380) & (w < 1000)]) < 1e-3
+
+
+@needs_wavelengths
+def test_veit_check_against_l1c(veit):
+    d = wl.check_against_l1c(veit['irr'], veit['rad'], veit['l1c'])
+    assert d['E'] < 1e-4
+    assert d['Lu'] == 0.0
+    assert d['Ld'] < 1e-3
+
+
+@needs_wavelengths
+def test_veit_l2a_matches_l1c(veit):
+    l1c, l2a = veit['l1c'], veit['l2a']
+    np.testing.assert_allclose(l2a['sza'], np.mean(l1c['sza']), atol=0.1)
+    band = (l2a['wave'] > 400) & (l2a['wave'] < 700)
+    rho = l2a['reflectance'][band, 0]
+    assert np.all(np.isfinite(rho)) and 0 < np.median(rho) < 0.1
+
+
+def test_sequence_table_and_match_request():
+    import pandas as pd
+    names = ['HYPERNETS_W_VEIT_L1A_IRR_20260604T0845_20260828T1547_v2.1.nc',
+             'HYPERNETS_W_VEIT_L1A_RAD_20260604T0845_20260828T1547_v2.1.nc',
+             'HYPERNETS_W_VEIT_L1C_ALL_20260604T0845_20260828T1547_090_v2.1.nc',
+             'HYPERNETS_W_VEIT_L2A_REF_20260604T0845_20260828T1547_090_v2.1.nc',
+             'HYPERNETS_W_BEFR_L1A_IRR_20230625T1015_20260901T1000_v2.1.nc',
+             'HYPERNETS_W_BEFR_L2A_REF_20230625T1015_20260901T1000_270_v2.1.nc']
+    prods = pd.DataFrame([dict(path='/x/' + n, **wl.parse_name(n)) for n in names])
+    seqs = wl.sequence_table(prods)
+    assert len(seqs) == 2
+    v = seqs.set_index('site').loc['VEIT']
+    assert v['complete'] and v['azimuth'] == '090' and v['n_products'] == 4
+    req = pd.DataFrame(dict(row=['BEFR 122302', 'BEFR 122302'], priority=['primary', 'spare'],
+                            site=['BEFR_H', 'BEFR_H'], sequence_time=['20230625T1015',
+                                                                      '20230629T1200'],
+                            azimuth=['090', '090'], instrument=['HYPSTAR_122302'] * 2))
+    m = wl.match_request(seqs, req)
+    st = m.set_index('sequence_time')['status'].to_dict()
+    assert st == {'20230625T1015': 'delivered', '20230629T1200': 'missing',
+                  '20260604T0845': 'extra'}
+    befr = m[m['sequence_time'] == '20230625T1015'].iloc[0]
+    assert befr['azimuth_ok'] == False and not befr['complete']  # noqa: E712  (270 != 090)
+
+
+def test_release2_path():
+    p = wl.release2_path('VEIT_H', '20250812T0630', 'X.nc', root='/r')
+    assert p == '/r/VEIT_H/2025/08/12/X.nc'
+
+
+def _release2_file():
+    import pandas as pd
+    import os
+    try:
+        r = pd.read_csv(os.path.join(os.path.dirname(__file__), '..', '..', 'docs',
+                                     'wiggles_data_request.csv'), dtype=str)
+        row = r[r['row'] == 'VEIT 122304 post-recal'].iloc[0]
+        p = wl.release2_path(row['site'], row['sequence_time'], row['file'])
+        return p if os.path.exists(p) else None
+    except Exception:
+        return None
+
+
+@pytest.mark.skipif(_release2_file() is None, reason='requires the Release 2 archive')
+def test_load_l2b_release2():
+    d = wl.load_l2b(_release2_file())
+    assert d['meta']['system_id'] == 'HYPSTAR_122304'
+    assert d['downwelling_radiance'].shape == (1538, 1)
+    assert d['irradiance'].shape == (1538, 1)
+    assert int(d['n_valid_scans'][0]) > 0
+
+
+def test_sky_class_boundaries():
+    assert wl.sky_class(0.02) == 'clear'
+    assert wl.sky_class(0.0499) == 'clear'
+    assert wl.sky_class(0.05) == 'cloudy'
+    assert wl.sky_class(0.2499) == 'cloudy'
+    assert wl.sky_class(0.25) == 'overcast'
+    assert wl.sky_class(0.02, ed_cv_750=0.021) == 'broken'     # broken overrides
+    assert wl.sky_class(0.02, ed_cv_750=0.02) == 'clear'
+    assert wl.sky_class(np.nan) is None
+    assert set(wl.SKY_CLASSES) == {'clear', 'cloudy', 'overcast', 'broken'}
+
+
+@needs_wavelengths
+def test_veit_sky_index(veit):
+    s = wl.sky_index(irr=veit['irr'], rad=veit['rad'])
+    assert s['ld_ed_750'] == pytest.approx(0.0270, abs=0.0002)
+    assert s['ed_cv_750'] == pytest.approx(0.0046, abs=0.0005)
+    assert len(s['ld_ed_750_series']) == 2
+    assert min(s['ld_ed_750_series']) < s['ld_ed_750'] < max(s['ld_ed_750_series'])
+    for k in ('l1c', 'l2a'):
+        assert wl.sky_index(l2=veit[k])['ld_ed_750'] == pytest.approx(0.0269, abs=0.0002)
+    assert wl.sky_class(s['ld_ed_750'], s['ed_cv_750']) == 'clear'

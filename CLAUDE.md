@@ -12,8 +12,42 @@ diagnostic plots are intended to be shared with the community.
 
 Repository layout:
 
-- `hypernet/` — the Python package source.
+- `hypernet/` — the Python package source: the reusable WATERHYPERNET data
+  layer.
+  - `whn_explore.py` — archive root resolution, filename indexing, single-
+    spectrum reads with the agreed product/units conventions (Rrs = ρw/π),
+    pooling, shape clustering and the ~100-spectrum-per-site sample.
+    `python -m hypernet.whn_explore 1|2`.
+  - `whn_simspec_check.py` — the Similarity-Spectrum over-subtraction scan at
+    the dark sites.  `python -m hypernet.whn_simspec_check`.
+  - `srf.py` — spectral response functions: the line table, Gaussian line
+    fits, FWHM(λ) models (`SRFModel`, JSON), and the HSRS template SRF fit.
+  - `whn_l1a.py` — L1A/L1C/L2A readers (vza is from nadir: < 90 = water/Lu,
+    ≥ 90 = sky/Ld) and delivery indexing against the data request.
+  - `whn_srf.py` — per-sequence SRF fits (E, Ld, Lu; empirical + template).
+  - `refspec.py` — TSIS-1 HSRS fetch/load (file in `$OS_COLOR/hypernet/ref`).
+  - `data/` — small committed products, e.g. `veit_srf_model.json`.
+  - `wiggles/` — the wiggles effort's Phase 0 scripts, as a subpackage:
+    `python -m hypernet.wiggles.phase0a_veit` etc.; committed CSVs and
+    `figs/phase0/` live alongside.  Prompts: `claude_prompts/wiggles/`.
   - `hypernet/tests/` — pytest tests (`pytest.ini` points `testpaths` here).
+- `docs/` — **the Sphinx source root** for the WATERHYPERNET user guide, built
+  by Read the Docs (`.readthedocs.yaml` at the repo root, `docs/conf.py`,
+  `docs/requirements.txt`).  The guide is Markdown parsed by MyST: `index.md`
+  carries the byline and the toctree, and the eleven page files follow the
+  reading order set in `claude_prompts/howto_prompts.md`.
+  - ⚠ **Every `.md` file in `docs/` becomes a published page.**  One left out of
+    the toctree is still built and still served at a guessable URL, so anything
+    not meant for the public site must go in `exclude_patterns` in `conf.py` or
+    live outside `docs/`.  This is why the review correspondence sits in
+    `correspondence/`.
+  - `whn_figures.py` writes `figs/*.png` + `summary_table.{csv,md}`
+    (`summary_table.md` is excluded from the build).  `make_pdf.py` is
+    **deprecated** — superseded by the RTD build, macOS/Chrome-only, and its
+    default target no longer exists.  Generated PDFs are gitignored.
+- `correspondence/` — `kevin_comments.md` and `respond_to_kevin.md`, the review
+  exchange with Kevin Ruddick.  Deliberately outside the documentation build;
+  the response has not been sent.
 - `claude_prompts/` — prompts and task definitions that drive this work.
   `start_up_prompts.md` is the bootstrapping doc; read the relevant prompt doc
   before acting, and do the numbered task you were pointed at, not the whole file.
@@ -38,6 +72,12 @@ package directory named after the repo.
   perform one-off calculations only in memory or in the chat.
 - **Python environment:** If you need to run Python, use the `ocean14` conda
   environment (e.g. `conda run -n ocean14 python script.py`).
+- **Running the scripts:** from the repository root, so that `hypernet` imports
+  resolve (`python docs/whn_figures.py`, `python -m hypernet.whn_explore 1`).
+  `pip install -e .` removes the need for the `sys.path` bootstrap at the top of
+  `docs/whn_figures.py`.
+- **Data artifacts:** parquet/npz intermediates are written outside the repo,
+  under `$OS_COLOR/hypernet/whn_explore`; only figures and tables are committed.
 - **Logging:** Record completed work under the `## Logs` section of the prompt
   doc you were working from, dated, including what you learned about the repo.
 

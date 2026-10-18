@@ -1,0 +1,25 @@
+# Read the Docs configuration file
+# See https://docs.readthedocs.io/en/stable/config-file/v2.html for details.
+#
+# Builds the WATERHYPERNET user guide (Sphinx, rooted at docs/) on every push.
+# The guide pages are Markdown parsed by MyST; see docs/conf.py.
+
+version: 2
+
+build:
+  os: ubuntu-24.04
+  tools:
+    python: "3.12"          # hypernet requires Python >= 3.12 (setup.py)
+
+sphinx:
+  configuration: docs/conf.py
+  builder: html
+  fail_on_warning: false    # advisory, mirroring the IOPtics policy
+
+python:
+  install:
+    # Install hypernet itself so the future package-API section can autodoc it.
+    - method: pip
+      path: .
+    # Documentation build dependencies (Sphinx + MyST + theme).
+    - requirements: docs/requirements.txt

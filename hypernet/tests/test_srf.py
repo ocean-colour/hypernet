@@ -1,0 +1,430 @@
+"""Tests for the SRF line-fitting layer (:mod:`hypernet.srf`).
+
+All data-independent: synthetic lines on a HYPSTAR-like grid (~0.48 nm).
+
+Run from the repository root::
+
+    pytest -q hypernet/tests/test_srf.py
+"""
+
+import numpy as np
+import pytest
+
+from hypernet import srf
+
+# A HYPSTAR-like grid, deliberately not aligned with the line centres.
+WAV = np.arange(350.0, 1100.0, 0.483) + 0.117
+
+
+def _lines(x, comps, c0=100.0, c1=0.2, xref=600.0):
+    """Linear continuum times Gaussian absorption lines (depth, mu, sigma)."""
+    y = c0 + c1 * (x - xref)
+    for a, mu, s in comps:
+        y = y * (1.0 - a * np.exp(-0.5 * ((x - mu) / s) ** 2))
+    return y
+
+
+def test_air_to_vac():
+    # H alpha and Na D2: air -> vacuum (NIST)
+    assert srf.air_to_vac(656.281) == pytest.approx(656.461, abs=2e-3)
+    assert srf.air_to_vac(588.995) == pytest.approx(589.158, abs=2e-3)
+    assert np.all(srf.LINES['lam_vac'] > srf.LINES['lam_air'])
+
+
+def test_lines_table():
+    L = srf.LINES
+    assert list(L.columns) == ['name', 'lam_air', 'lam_vac', 'half', 'group',
+                               'blend', 'use_for_srf']
+    # Ca H/K are one blended group; the bands are diagnostic only
+    cahk = L[L['group'] == 'CaHK']
+    assert set(cahk['name']) == {'Ca K', 'Ca H'} and cahk['blend'].all()
+    assert not L.loc[L['name'].isin(['H2O', 'O2 A', 'O2 B']), 'use_for_srf'].any()
+    assert L['name'].is_unique
+
+
+def test_single_line_sloped_continuum():
+    mu, sig = 500.13, 1.2
+    y = _lines(WAV, [(0.3, mu, sig)], c1=0.5)
+    r = srf.fit_line(WAV, y, 500.0)
+    assert r['ok']
+    assert r['mu'] == pytest.approx(mu, abs=0.01)
+    assert r['fwhm'] == pytest.approx(srf.FWHM_PER_SIGMA * sig, abs=0.01)
+    assert r['depth'] == pytest.approx(0.3, abs=1e-3)
+
+
+def test_weighted_fit_errors_and_chi2():
+    rng = np.random.default_rng(42)
+    mu, sig = 656.35, 1.25
+    y0 = _lines(WAV, [(0.25, mu, sig)])
+    e = np.full_like(WAV, 0.1)
+    y = y0 + rng.normal(0.0, 0.1, WAV.size)
+    r = srf.fit_line(WAV, y, 656.281, err=e)
+    assert r['ok']
+    assert 0.3 < r['chi2_nu'] < 2.5
+    assert abs(r['mu'] - mu) < 4 * r['mu_err']
+    assert abs(r['sigma'] - sig) < 4 * r['sigma_err']
+    assert r['fwhm_err'] == pytest.approx(srf.FWHM_PER_SIGMA * r['sigma_err'])
+
+
+def test_blended_pair_recovers_both_centroids():
+    comps = [(0.55, 393.42, 0.95), (0.45, 396.80, 1.05)]
+    y = _lines(WAV, comps, c1=-0.3)
+    res = srf.fit_blend(WAV, y, [393.366, 396.847], half=4.0)
+    assert all(r['ok'] for r in res)
+    for r, (a, mu, s) in zip(res, comps):
+        assert r['mu'] == pytest.approx(mu, abs=0.01)
+        assert r['sigma'] == pytest.approx(s, abs=0.01)
+    # the continuum and chi2 are shared
+    assert res[0]['c1'] == res[1]['c1']
+
+
+def test_failures_return_nan():
+    y = _lines(WAV, [(0.3, 500.0, 1.2)])
+    # window off the grid
+    r = srf.fit_line(WAV, y, 200.0)
+    assert not r['ok'] and np.isnan(r['mu']) and np.isnan(r['fwhm'])
+    # all-NaN spectrum
+    r = srf.fit_line(WAV, np.full_like(WAV, np.nan), 500.0)
+    assert not r['ok'] and np.isnan(r['sigma'])
+    # an emission line is not an absorption line
+    r = srf.fit_line(WAV, _lines(WAV, [(-0.3, 500.0, 1.2)]), 500.0)
+    assert not r['ok'] and np.isnan(r['depth'])
+
+
+def test_fit_lines_table():
+    L = srf.LINES
+    comps = [(0.3, lam + 0.05, 1.1 + 0.001 * (lam - 400.0))
+             for lam in L['lam_air']]
+    y = _lines(WAV, comps)
+    # cut the grid at 800 nm: the red lines must come back NaN, not raise
+    keep = WAV < 800.0
+    df = srf.fit_lines(WAV[keep], y[keep])
+    assert len(df) == len(L) and list(df['name']) == list(L['name'])
+    red = df['lam_air'] > 800.0
+    assert not df.loc[red, 'ok'].any() and df.loc[red, 'mu'].isna().all()
+    np.testing.assert_allclose(df['fwhm'], srf.FWHM_PER_SIGMA * df['sigma'])
+    good = df['ok']
+    assert good.sum() >= 7
+    np.testing.assert_allclose(df.loc[good, 'dmu'], 0.05, atol=0.03)
+
+
+def test_scan_errors():
+    rng = np.random.default_rng(1)
+    scans = 10.0 + rng.normal(0.0, 0.5, (200, 6))  # (wavelength, scan)
+    mean, e_mean, e_scan = srf.scan_errors(scans)
+    assert mean.shape == (200,)
+    np.testing.assert_allclose(e_scan, scans.std(axis=1, ddof=1))
+    np.testing.assert_allclose(e_mean, e_scan / np.sqrt(6))
+
+
+# --- FWHM(lambda) model -------------------------------------------------------
+
+LAM_PTS = np.array([393.4, 430.8, 486.1, 517.3, 589.3, 656.3, 849.8, 866.2])
+TRUE = np.array([3.0, 0.4, -0.25])  # FWHM at 600 nm, slope, curvature (x = (lam-600)/100)
+
+
+def _quad(lam, c=TRUE):
+    x = (lam - srf.LAM_REF) / srf.LAM_SCALE
+    return c[0] + c[1] * x + c[2] * x ** 2
+
+
+def test_fwhm_model_exact_quadratic():
+    fw = _quad(LAM_PTS)
+    coeffs, cov = srf.fit_fwhm_model(LAM_PTS, fw, np.full_like(fw, 0.05))
+    np.testing.assert_allclose(coeffs, TRUE, atol=1e-10)
+    np.testing.assert_allclose(srf.fwhm_at(LAM_PTS, coeffs), fw, atol=1e-10)
+    assert isinstance(srf.fwhm_at(500.0, coeffs), float)
+    # at lam_ref the error is sqrt(cov[0, 0])
+    assert srf.fwhm_err_at(srf.LAM_REF, cov) == pytest.approx(np.sqrt(cov[0, 0]))
+
+
+def test_fwhm_model_cov_shrinks_with_err():
+    fw = _quad(LAM_PTS)
+    _, cov1 = srf.fit_fwhm_model(LAM_PTS, fw, np.full_like(fw, 0.10))
+    _, cov2 = srf.fit_fwhm_model(LAM_PTS, fw, np.full_like(fw, 0.05))
+    np.testing.assert_allclose(cov2, cov1 / 4.0)
+    assert np.all(np.diag(cov2) < np.diag(cov1))
+
+
+def test_fwhm_model_weights_and_bad_points():
+    rng = np.random.default_rng(3)
+    err = rng.uniform(0.02, 0.2, LAM_PTS.size)
+    fw = _quad(LAM_PTS) + rng.normal(0.0, err)
+    fw_bad = np.append(fw, [np.nan, 9.0])
+    err_bad = np.append(err, [0.1, 0.0])       # NaN value, zero error: dropped
+    lam_bad = np.append(LAM_PTS, [700.0, 750.0])
+    c1, _ = srf.fit_fwhm_model(LAM_PTS, fw, err)
+    c2, _ = srf.fit_fwhm_model(lam_bad, fw_bad, err_bad)
+    np.testing.assert_allclose(c1, c2)
+    # too few points -> NaN, not an exception
+    c, cov = srf.fit_fwhm_model(LAM_PTS[:2], fw[:2], err[:2])
+    assert np.all(np.isnan(c)) and np.all(np.isnan(cov))
+
+
+def test_srfmodel_json_roundtrip(tmp_path):
+    fw = _quad(LAM_PTS)
+    coeffs, cov = srf.fit_fwhm_model(LAM_PTS, fw, np.full_like(fw, 0.05))
+    m = srf.SRFModel('E', coeffs, cov, offset=0.03, offset_err=0.01,
+                     lam_min=393.4, lam_max=866.2, npts=8,
+                     instrument='HYPSTAR_122304', meta={'seq': 'SEQ20260604T084543'})
+    m2 = srf.SRFModel.from_json(m.to_json())
+    np.testing.assert_array_equal(m2.coeffs, m.coeffs)
+    np.testing.assert_array_equal(m2.cov, m.cov)
+    assert (m2.channel, m2.offset, m2.instrument, m2.meta) == \
+        (m.channel, m.offset, m.instrument, m.meta)
+    assert np.isnan(m2.chi2_nu)          # NaN survives as JSON null
+    assert 'NaN' not in m.to_json()
+    # file round trip, single and several models
+    p = tmp_path / 'e.json'
+    m.to_json(p)
+    assert srf.SRFModel.from_json(p).fwhm(500.0) == pytest.approx(m.fwhm(500.0))
+    mL = srf.SRFModel('Ld', coeffs + 0.2, cov)
+    srf.save_srf_models(tmp_path / 'all.json', [m, mL], meta={'site': 'VEIT'})
+    got = srf.load_srf_models(tmp_path / 'all.json')
+    assert set(got) == {'E', 'Ld'}
+    assert got['Ld'].fwhm(600.0) == pytest.approx(TRUE[0] + 0.2)
+
+
+def test_srfmodel_from_lines():
+    # synthetic spectrum: every line at +0.04 nm, sigma following TRUE
+    L = srf.LINES
+    comps = [(0.3, lam + 0.04, _quad(lam) / srf.FWHM_PER_SIGMA) for lam in L['lam_air']]
+    y = _lines(WAV, comps)
+    df = srf.fit_lines(WAV, y, err=np.full_like(WAV, 0.01))
+    m = srf.SRFModel.from_lines('E', df, instrument='test')
+    use = df['ok'] & df['use_for_srf']
+    assert m.npts == use.sum() >= 8
+    np.testing.assert_allclose(m.coeffs, TRUE, atol=0.02)
+    assert m.offset == pytest.approx(0.04, abs=0.01)
+    assert m.lam_min == pytest.approx(393.366) and m.frame == 'air'
+    assert m.sigma(600.0) == pytest.approx(TRUE[0] / srf.FWHM_PER_SIGMA, abs=0.01)
+
+
+def test_scan_errors_flatten_removes_broadband_scatter():
+    rng = np.random.default_rng(7)
+    base = _lines(WAV, [(0.3, 500.0, 1.2)])
+    scale = 1.0 + 0.05 * rng.normal(size=6)          # 5 % broadband changes
+    tilt = 1.0 + 0.02 * rng.normal(size=6)[None, :] * (WAV[:, None] - 600) / 300
+    noise = 1.0 + 0.004 * rng.normal(size=(WAV.size, 6))  # 0.4 % pixel noise
+    scans = base[:, None] * scale[None, :] * tilt * noise
+    mean, _, raw = srf.scan_errors(scans)
+    mean_f, _, flat = srf.scan_errors(scans, flatten_px=20)
+    np.testing.assert_array_equal(mean, mean_f)
+    assert np.median(raw / mean) > 0.02
+    assert np.median(flat / mean) == pytest.approx(0.004, rel=0.25)
+
+
+# --- Template (reference-spectrum) fit -----------------------------------------
+
+def _fake_reference(lo=380.0, hi=900.0, seed=11):
+    """A 0.005 nm 'solar' spectrum: many narrow absorption lines on a slope."""
+    rng = np.random.default_rng(seed)
+    w = np.arange(lo, hi, 0.005)
+    f = 1.5 + 0.0005 * (w - 600)
+    for mu in rng.uniform(lo, hi, int(3 * (hi - lo))):
+        a, s = rng.uniform(0.05, 0.8), rng.uniform(0.005, 0.05)
+        f = f * (1 - a * np.exp(-0.5 * ((w - mu) / s) ** 2))
+    return w, f
+
+
+def test_vac_to_air_inverts():
+    lam = np.array([393.366, 656.281, 866.214])
+    np.testing.assert_allclose(srf.vac_to_air(srf.air_to_vac(lam)), lam, atol=1e-9)
+
+
+def test_template_windows_skip_telluric():
+    win = srf.template_windows(390, 880, 10)
+    assert (390.0, 400.0) in win and (850.0, 860.0) in win
+    assert all(not (a < 773 and b > 757) for a, b in win)      # O2-A excluded
+    assert all(b - a == 10 for a, b in win)
+
+
+@pytest.mark.parametrize('veil', [0.0, 0.08])
+def test_template_fit_recovers_sigma_shift_veil(veil):
+    rw, rf = _fake_reference()
+    sig, dl = 1.15, 0.07
+    x = WAV[(WAV > 480) & (WAV < 520)]
+    R = srf.convolve_gaussian(rw, rf, x - dl, sig)
+    m = (x >= 490) & (x <= 500)
+    y = (2.0 + 0.01 * (x - 495)) * (R + veil * R[m].mean())
+    rng = np.random.default_rng(5)
+    e = np.full_like(x, 1e-4 * y.mean())
+    y = y + rng.normal(0, e)
+    r = srf.fit_srf_template(x, y, rw, rf, 490.0, 500.0, err=e, veil=True)
+    assert r['ok']
+    for k, v in (('sigma', sig), ('dlam', dl), ('veil', veil)):
+        assert abs(r[k] - v) < max(4 * r[k + '_err'], 0.005), k
+    assert r['sigma'] == pytest.approx(sig, abs=0.02)
+    assert 0.3 < r['chi2_nu'] < 2.5
+
+
+def test_template_fit_fails_gracefully():
+    rw, rf = _fake_reference(450, 550)
+    r = srf.fit_srf_template(WAV, np.ones_like(WAV), rw, rf, 800.0, 810.0)
+    assert not r['ok'] and np.isnan(r['sigma'])            # reference does not cover
+
+
+def test_template_table_feeds_srfmodel():
+    rw, rf = _fake_reference()
+    x = WAV[(WAV > 385) & (WAV < 895)]
+    true = np.array([2.7, 0.1, -0.05])
+    fw = lambda l: true[0] + true[1] * (l - 600) / 100 + true[2] * ((l - 600) / 100) ** 2  # noqa
+    wins = srf.template_windows(400, 880, 20)
+    y = np.full_like(x, np.nan)
+    for a, b in wins:  # build each window with its own sigma
+        mm = (x >= a) & (x <= b)
+        y[mm] = srf.convolve_gaussian(rw, rf, x[mm] - 0.03,
+                                      fw(0.5 * (a + b)) / srf.FWHM_PER_SIGMA)
+    e = np.full_like(x, 1e-3)
+    df = srf.fit_template_windows(x, y, rw, rf, windows=wins, err=e, veil=False)
+    assert df['ok'].all()
+    m = srf.SRFModel.from_lines('E', df)
+    np.testing.assert_allclose(m.coeffs, true, atol=0.02)
+    assert m.offset == pytest.approx(0.03, abs=0.005)
+
+
+def _hsrs_ok():
+    try:
+        from hypernet import refspec
+        return refspec.hsrs_available()
+    except Exception:
+        return False
+
+
+@pytest.mark.skipif(not _hsrs_ok(), reason='requires the TSIS-1 HSRS file in $OS_COLOR/hypernet/ref')
+def test_template_fit_on_hsrs():
+    from hypernet import refspec
+    rw, rf = refspec.load_hsrs(410, 455, frame='air')
+    assert rw.size > 5000 and np.all(np.diff(rw) > 0)
+    sig, dl = 1.2, -0.05
+    x = WAV[(WAV > 425) & (WAV < 445)]
+    y = 1.3 * srf.convolve_gaussian(rw, rf, x - dl, sig)
+    e = 1e-3 * y
+    r = srf.fit_srf_template(x, y, rw, rf, 426.0, 436.0, err=e)
+    assert r['ok']
+    assert r['sigma'] == pytest.approx(sig, abs=0.01)
+    assert r['dlam'] == pytest.approx(dl, abs=0.01)
+
+
+def test_template_fit_via_grid():
+    """A spectrum observed on one grid and np.interp'd onto another is fitted
+    without bias when the resampling is modelled (via_grid)."""
+    rw, rf = _fake_reference()
+    gE = np.arange(380.0, 900.0, 0.47) + 0.21                 # native 'E' grid
+    gL = WAV[(WAV > 470) & (WAV < 530)]                        # output 'L' grid
+    sig, dl = 0.95, 0.04
+    yE = srf.convolve_gaussian(rw, rf, gE - dl, sig)
+    y = np.interp(gL, gE, yE)
+    e = np.full_like(gL, 1e-4)
+    r = srf.fit_srf_template(gL, y, rw, rf, 490.0, 500.0, err=e, veil=False, via_grid=gE)
+    assert r['ok']
+    assert r['sigma'] == pytest.approx(sig, abs=0.01)
+    assert r['dlam'] == pytest.approx(dl, abs=0.01)
+
+
+@pytest.mark.parametrize('shape,par', [('pvoigt', 0.3), ('supergauss', 3.0)])
+def test_template_fit_shapes(shape, par):
+    """A non-Gaussian SRF is recovered, FWHM and shape parameter."""
+    rw, rf = _fake_reference()
+    sig = 1.1
+    x = WAV[(WAV > 470) & (WAV < 530)]
+    y = srf.convolve_kernel(rw, rf, x - 0.03, sig, shape, par)
+    e = np.full_like(x, 1e-4)
+    r = srf.fit_srf_template(x, y, rw, rf, 490.0, 510.0, err=e, veil=False, shape=shape)
+    assert r['ok']
+    assert r['fwhm'] == pytest.approx(srf.FWHM_PER_SIGMA * sig, abs=0.02)
+    assert r['shape_par'] == pytest.approx(par, abs=0.05 * max(1, par))
+    # a Gaussian truth gives the Gaussian limit
+    yg = srf.convolve_gaussian(rw, rf, x, sig)
+    rg = srf.fit_srf_template(x, yg, rw, rf, 490.0, 510.0, err=e, veil=False, shape=shape)
+    assert rg['shape_par'] == pytest.approx({'pvoigt': 0.0, 'supergauss': 2.0}[shape], abs=0.05)
+
+
+def test_template_fit_absorber():
+    """A band (tau x k) on the reference is fitted with its scale."""
+    rw, rf = _fake_reference()
+    tau = 0.5 * np.exp(-0.5 * ((rw - 500.0) / 0.8) ** 2)       # a broad 'band'
+    sig, k = 1.0, 2.5
+    x = WAV[(WAV > 470) & (WAV < 530)]
+    y = srf.convolve_gaussian(rw, rf * np.exp(-k * tau), x, sig)
+    e = np.full_like(x, 1e-4)
+    r = srf.fit_srf_template(x, y, rw, rf, 490.0, 510.0, err=e, veil=False, absorber=tau)
+    assert r['ok']
+    assert r['tau_scale'] == pytest.approx(k, abs=0.05)
+    assert r['sigma'] == pytest.approx(sig, abs=0.01)
+
+
+# --- SRF shapes carried by SRFModel (lab data prompts, task 3; Setup Q6, Q14) -------
+def _model(shape='gauss', par=np.nan, c=(2.4, 0.05, 0.02)):
+    return srf.SRFModel(channel='E', coeffs=np.array(c), cov=np.eye(3) * 1e-4,
+                        shape=shape, shape_par=par)
+
+
+def test_template_fit_fixed_shape_par():
+    """With p held at its true value only the width is fitted, and recovered;
+    a starting value alone still lets p move."""
+    rw, rf = _fake_reference()
+    sig, p = 1.05, 2.8
+    x = WAV[(WAV > 470) & (WAV < 530)]
+    y = srf.convolve_kernel(rw, rf, x - 0.02, sig, 'supergauss', p)
+    e = np.full_like(x, 1e-4)
+    r = srf.fit_srf_template(x, y, rw, rf, 490.0, 510.0, err=e, veil=False,
+                             shape='supergauss', shape_par=p, fix_shape_par=True)
+    assert r['ok'] and r['shape_par'] == p and r['shape_par_err'] == 0.0
+    assert r['fwhm'] == pytest.approx(srf.FWHM_PER_SIGMA * sig, abs=0.01)
+    assert r['dlam'] == pytest.approx(0.02, abs=0.01)
+    # p fixed at the wrong value biases the width; the Gaussian (p = 2) reads narrow
+    rg = srf.fit_srf_template(x, y, rw, rf, 490.0, 510.0, err=e, veil=False)
+    assert rg['fwhm'] < r['fwhm']
+    rs = srf.fit_srf_template(x, y, rw, rf, 490.0, 510.0, err=e, veil=False,
+                              shape='supergauss', shape_par=2.3)
+    assert rs['shape_par'] == pytest.approx(p, abs=0.1) and rs['shape_par_err'] > 0
+    with pytest.raises(ValueError):
+        srf.fit_srf_template(x, y, rw, rf, 490.0, 510.0, shape='supergauss',
+                             fix_shape_par=True)
+
+
+def test_supergauss_p2_matrix_equals_gaussian():
+    lam = np.arange(390.0, 700.0, 0.01)
+    grid = WAV[(WAV > 400) & (WAV < 690)]
+    mg = srf.convolution_matrix(lam, grid, _model(), cache=False)
+    ms = srf.convolution_matrix(lam, grid, _model('supergauss', 2.0), cache=False)
+    assert mg.shape == ms.shape and np.array_equal(mg.indptr, ms.indptr)
+    np.testing.assert_allclose(ms.toarray(), mg.toarray(), rtol=0, atol=1e-13)
+
+
+def test_shaped_model_convolution_and_cache():
+    rw, rf = _fake_reference()
+    grid = WAV[(WAV > 480) & (WAV < 520)]
+    g, s = _model(), _model('supergauss', 2.8)
+    assert srf.srf_key(g) != srf.srf_key(s)              # never share a cached matrix
+    yg = srf.convolve_to_grid(rw, rf, grid, g)
+    ys = srf.convolve_to_grid(rw, rf, grid, s)
+    yk = np.array([srf.convolve_kernel(rw, rf, [x], s.sigma(x), 'supergauss', 2.8)[0]
+                   for x in grid])
+    np.testing.assert_allclose(ys, yk, rtol=2e-4)
+    assert np.max(np.abs(ys - yg)) > 1e-3 * np.max(np.abs(yg))
+    # cached matrices are keyed on the shape: the Gaussian one is still Gaussian
+    np.testing.assert_array_equal(srf.convolve_to_grid(rw, rf, grid, g), yg)
+    # a ShapedFWHM is never cached but still convolves with its shape
+    f = srf.ShapedFWHM(s.fwhm, 'supergauss', 2.8)
+    assert srf.srf_key(f) is None
+    np.testing.assert_allclose(srf.convolve_to_grid(rw, rf, grid, f), ys, rtol=1e-12)
+    assert srf.srf_shape(np.ones(3))[0] == 'gauss'      # an array's .shape is not an SRF shape
+    assert srf.srf_shape(2.5)[0] == 'gauss'
+
+
+def test_srfmodel_shape_json_backward_compatible():
+    s = _model('supergauss', 2.75)
+    d = s.to_dict()
+    assert d['shape'] == 'supergauss' and d['shape_par'] == 2.75
+    t = srf.SRFModel.from_dict(d)
+    assert t.shape == 'supergauss' and t.shape_par == 2.75
+    old = {k: v for k, v in _model().to_dict().items() if k not in ('shape', 'shape_par')}
+    o = srf.SRFModel.from_dict(old)                     # JSON from before the shape fields
+    assert o.shape == 'gauss' and np.isnan(o.shape_par)
+    assert srf.SRFModel.from_dict(_model().to_dict()).shape == 'gauss'
+    with pytest.raises(ValueError):
+        _model('supergauss')                            # p missing
+    with pytest.raises(ValueError):
+        _model('lorentz', 1.0)

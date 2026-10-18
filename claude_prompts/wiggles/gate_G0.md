@@ -30,7 +30,8 @@ L1A delivery.**
   - Field and lab agree on every class.  For 122303 that holds only once the
     method is set from the lab.
   - The criterion as written ("on most instruments") would drop H2, because
-    4 of 7 are E ≈ L.  It needs the per-instrument wording proposed below.
+    4 of 7 are E ≈ L.  §4 now has a per-instrument wording (edit 1, applied
+    2026-10-18).
 - **G0(b), stability: pass.**  The field spread is ≤ 0.06 nm.  Recalibration
   jumps are ≤ 0.03 nm and the lab epochs agree to ≤ 0.12 nm, all against
   0.2 nm.  **Phase 2 ships the per-instrument SRF table**, so
@@ -229,6 +230,14 @@ gross grid errors are excluded: the 122304 proxy rings 1.4-2.6× more on 5 of
 - [ ] **Then** Phase 0 task 14 (the final G0), with Phase 0b's tables
       outranking these.
 
-## Proposed edits to `docs/wiggles_planning.md` §4 (not applied; see Q&A)
+## Edits to `docs/wiggles_planning.md` §4 (applied 2026-10-18)
 
-See the Q&A entry "Gate #6" in `wiggles_lab_data_prompts.md`.
+The five edits proposed in the Q&A entry "Gate #6" of
+`wiggles_lab_data_prompts.md` were approved by JXP and applied on
+2026-10-18:
+
+1. G0(a) per instrument;
+2. G0(b) with lab epochs and a ~0.1 nm bound on recalibration jumps;
+3. G0(c) with the shift/stretch dispersion and the `labcal` grids;
+4. the super-Gaussian clause in Phase 0's first bullet;
+5. the provisional-G0 status line under *Gate G0*.

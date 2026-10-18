@@ -199,7 +199,9 @@ much less, because the ratio in the bracket absorbs it.
 stability, from the data themselves.
 
 - Parameterise each channel's SRF as a Gaussian whose FWHM is a quadratic in
-  λ, fitted to ~10 clean solar/telluric lines per spectrum (the lines in the
+  λ (with a super-Gaussian shape where laboratory line-spread data show one,
+  its exponent from the lab and checked against the field), fitted to ~10
+  clean solar/telluric lines per spectrum (the lines in the
   table above plus Ca H/K as a blended pair). Fit E from L1A_IRR and L from the
   Ld and Lu scans of L1A_RAD separately; Ld = Lu is the internal check.
 - Line depths in Ld are affected by rotational-Raman filling-in (the Ring
@@ -215,14 +217,26 @@ stability, from the data themselves.
 - Compare the fitted SRFs to whatever the calibration files and any lab
   line-spread data contain.
 
-*Gate G0:* (a) If FWHM_E(λ) = FWHM_L(λ) within the fit uncertainty on most
-instruments, H2 is dropped and eq. (14) suffices. (b) If the SRFs are stable
-per instrument (spread across SZA, sky and season below ~0.2 nm, and no jump
-at recalibration that the cal files do not explain), Phase 2 ships a per-
-instrument SRF table. If not, Phase 2 must self-calibrate the SRF from each
-sequence's own Fraunhofer lines, and the plan's cost rises. (c) If centroid
-offsets exceed ~0.1 nm systematically on some instrument, a wavelength
-recalibration goes into the function before anything else.
+*Gate G0:* (a) Per instrument: where ΔFWHM = FWHM_L − FWHM_E (median over
+400–680 nm, Gaussian-equivalent widths) is below 0.15 nm (gate G1), H2 is not
+needed and the processor's linear interpolation is kept; where it is above,
+the `srf` method applies. Lab line-spread data, where they exist, cross-check
+the class; a disagreement is resolved from the L1A E, not silently. (b) If the
+SRFs are stable per instrument (spread across SZA, sky and season below
+~0.2 nm; any jump at recalibration below ~0.1 nm or explained by the cal
+files; lab calibration epochs, where available, agreeing to ~0.2 nm), Phase 2
+ships a per-instrument SRF table. If not, Phase 2 must self-calibrate the SRF
+from each sequence's own Fraunhofer lines, and the plan's cost rises. (c) If
+centroid offsets, or the wavelength-scale shift and stretch, exceed ~0.1 nm
+systematically anywhere in 390–870 nm on some instrument, a wavelength
+correction (per-sequence shift + stretch against the model irradiance, with a
+calibration-period fallback) goes into the function before anything else. The
+processor's grids are the lab wavelength polynomials
+(`hypernet.labcal.grid_for`); the correction is relative to them. A
+provisional evaluation from Release 2 L2 and the laboratory data
+(`claude_prompts/wiggles/gate_G0.md`, 2026-10-18) passes (a) per instrument
+and (b), and triggers (c), handled by the wavelength-scale correction; the
+final G0 waits for the L1A.
 
 ### Phase 1 — Twin experiment (no data dependency)
 

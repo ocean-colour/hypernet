@@ -1555,3 +1555,103 @@ not started.
     per-instrument at every step: class, shape and epoch.
   - The only criterion that triggers is (c), through the dispersion, which
     Phase 2 already corrects.
+
+### 2026-10-18 -- Report #7 (Opus 5.5)
+
+**A. §4 edits applied.**  JXP approved all five Gate #6 proposals ("Ok use
+your Proposed").  I applied them to `docs/wiggles_planning.md` exactly as
+proposed, and left the rest of each paragraph unchanged:
+
+1. G0(a) per instrument;
+2. G0(b) with lab epochs and the ~0.1 nm recalibration bound;
+3. G0(c) with shift/stretch and the `labcal` grids;
+4. the super-Gaussian clause in Phase 0's first bullet;
+5. the provisional-G0 status line.
+
+The only unpublished reference added under `docs/` is the path
+`claude_prompts/wiggles/gate_G0.md`, as proposed.  In `gate_G0.md`, the
+last section now records the edits as applied (2026-10-18, JXP's approval),
+and the Verdict's forward reference was updated.
+
+**B. Task 7, the interim report.**
+
+- **Kept the previous version** as
+  `reports/wiggles_interim_report_2026-10-15.md` (an unchanged copy).
+- **Edited `reports/wiggles_interim_report.md`** in place, same voice and
+  readers; dated 18 October, "updated from the 15 October version".
+  - **Summary.**  E ≈ L tolerance 0.07 → 0.06 nm; the 122303 "borderline"
+    wording removed.  New bullets:
+    - the lab confirmation of the two classes, and the air scale;
+    - the flat-topped E, with the twin's 49-63 % and the VEIT O₂-A caveat;
+    - the window-pattern verdict: Xe-driven ±0.09 nm residual, 2.5-21 % of
+      the variance, ~80 % unexplained.
+  - **§3.1.**  Stability 0.01-0.06 → 0.02-0.06 nm, with a note that the
+    own E grids replaced the stand-in (≤ 0.055 nm effect).
+    - **Table 1** now has a shape column and the old values in brackets.
+    - 122303 moves to E ≈ L / `linear`, set from the lab.
+    - The "E from L2 reads 0.06-0.09 nm too wide" note is withdrawn.
+  - **§3.3.**
+    - 137 → 156 tests;
+    - the table carries the E shape;
+    - the lab-shape twin row (49-63 %, 27-45 % with ΔFWHM 0.2, 100 % shape-
+      aware);
+    - window pattern 0.13 → 0.12 nm rms (common pattern; 0.13 was over the
+      per-instrument patterns), and not the stand-in grid (≤ 0.0025 nm).
+  - **New §3.4** (the lab data), with Figure 8 (`figs/lab/fwhm_lab_vs_table.png`)
+    and Figure 9 (`figs/lab/window_pattern_vs_lab.png`).  Table 3 gives lab
+    vs field ΔFWHM, the E p, and the processor epoch with its status.  It
+    also covers:
+    - the grids are the lab polynomials (≤ 4e-5 nm), one epoch per
+      instrument, and the 120242 pixel window;
+    - the shaped E and its VEIT trade-off;
+    - the withdrawn bias;
+    - the window pattern;
+    - the L2 inversion: 1.5e-5 on VEIT; the E epoch is not testable from L2.
+  - **§4.**  The provisional G0 verdict ((a) pass per instrument, (b) pass,
+    (c) triggered and handled), "the SRF table is now validated against the
+    lab", and the two pending decisions (shaped E default vs O₂-A; the G1
+    threshold on Gaussian-equivalent widths).  The Phase 0b row adds the E
+    epoch check; Open items adds the ~80 % pattern and O₂-A.
+  - **§5.**
+    - #1 now notes that the L1A is the only way to check the E epochs.
+    - #2: received, with thanks to Joel, plus his five questions (the
+      epoch after recalibration, a 2025 epoch for 121222, the nominal `wl`
+      grid, the lamp illumination of the diffuser, which lines were fitted)
+      and the public-tables note.
+    - #4: the lamp floor ≤ 3e-4.
+    - #7: answered (air).
+    - New #8: the suggestion to fit without the Xe lines, or a better
+      pixel → λ model, phrased as a suggestion.
+  - **Footer:** adds `labcal.py` and `hypernet/data/lab_*.csv`.
+- **Numbers that moved** (15 Oct → 18 Oct):
+
+  | quantity | 15 Oct | 18 Oct |
+  |---|---|---|
+  | ΔFWHM 122302 | 0.46 | 0.44 |
+  | ΔFWHM 120242 | 0.39 | 0.35 |
+  | ΔFWHM 122303 | 0.14 (borderline) | 0.17 (E ≈ L / `linear` from the lab) |
+  | ΔFWHM 121231 | 0.08 | 0.03 |
+  | ΔFWHM 122305 | 0.01 | 0.03 |
+  | ΔFWHM 121222 | −0.05 to −0.03 | −0.06 to −0.05 |
+  | ΔFWHM 122304 | 0.39-0.49 | 0.39-0.49 (unchanged) |
+  | E ≈ L agreement at 450 nm | 0.07 nm | 0.06 nm |
+  | stability | 0.01-0.06 nm | 0.02-0.06 nm |
+  | window pattern | 0.13 nm | 0.12 nm rms |
+  | tests | 137 | 156 |
+  | L2 E-wide bias | 0.06-0.09 nm | withdrawn |
+
+- **New `hypernet/wiggles/lab_report_check.py`:**
+  - it checks that every relative link resolves from `reports/` (9 targets,
+    0 missing), and that Figures 1-9 are in sequence;
+  - it checks Table 1 (field ΔFWHM, p) and Table 3 (lab ΔFWHM) against
+    `srf_table.csv` and `lab_fwhm_compare_summary.csv`;
+  - the first run caught two of my rounding errors (121231 0.04 → 0.03;
+    122304 p 2.81 → 2.80) and a range-parsing bug in the checker; all are
+    fixed;
+  - result: all checks passed.
+- **`correspondence/wiggles_note_lab_data.txt` was not edited.**  Its numbers
+  still hold.  Its "about 2.2" for the VEIT field exponent is the Phase 0
+  weighted mean; task 3's free-p fit gives 2.54, and the report says
+  "~2.2-2.5".
+- No package code changed, so pytest was not re-run (156 passed after task
+  5).
